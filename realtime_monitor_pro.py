@@ -74,6 +74,9 @@ class RealtimeMonitorPro:
         self.last_detail_time = datetime.now()
         self.detail_interval = 30  # 每30秒显示一次详细信息
 
+        # 价格精度（动态检测）
+        self.price_precision = 2  # 默认2位小数
+
         print(f"\n{'='*80}")
         print(f"🚀 增强版实时交易信号监控 (双流整合)")
         print(f"{'='*80}")
@@ -139,6 +142,57 @@ class RealtimeMonitorPro:
         except Exception as e:
             logger.error(f"❌ K线流错误: {e}")
 
+    def _detect_price_precision(self, price: float) -> int:
+        """
+        动态检测价格精度
+
+        Args:
+            price: 价格
+
+        Returns:
+            建议的小数位数
+        """
+        if price >= 1000:
+            return 2  # $10,000.00
+        elif price >= 100:
+            return 2  # $100.00
+        elif price >= 10:
+            return 3  # $10.000
+        elif price >= 1:
+            return 4  # $1.0000
+        elif price >= 0.1:
+            return 4  # $0.1000
+        elif price >= 0.01:
+            return 4  # $0.0100
+        elif price >= 0.001:
+            return 5  # $0.00100
+        elif price >= 0.0001:
+            return 6  # $0.000100
+        elif price >= 0.00001:
+            return 7  # $0.0000100
+        else:
+            return 8  # $0.00000100
+
+    def _format_price(self, price: float, precision: int = None) -> str:
+        """
+        格式化价格显示
+
+        Args:
+            price: 价格
+            precision: 指定精度（None则自动检测）
+
+        Returns:
+            格式化后的价格字符串
+        """
+        if precision is None:
+            precision = self._detect_price_precision(price)
+
+        # 使用千分位分隔符
+        if price >= 1000:
+            return f"{price:,.{precision}f}"
+        else:
+            return f"{price:.{precision}f}"
+
     async def on_ticker(self, ticker: Dict):
         """
         ticker回调（实时价格）
@@ -149,13 +203,15 @@ class RealtimeMonitorPro:
         self.ticker_count += 1
         self.latest_ticker = ticker
 
-        # 记录价格历史
+        # 记录价格历史并动态检测精度
         if 'last' in ticker:
             price = ticker['last']
             self.price_history.append({
                 'time': datetime.now(),
                 'price': price
             })
+            # 更新价格精度
+            self.price_precision = self._detect_price_precision(price)
 
         # 实时显示更新
         self._display_realtime_status()
@@ -298,10 +354,13 @@ class RealtimeMonitorPro:
             strength_str = f"{strength}"
             regime_str = f"{regime_emoji} {regime}"
 
+        # 格式化价格（动态精度）
+        price_str = self._format_price(price)
+
         # 构建状态行
         status_line = (
             f"\r{datetime.now().strftime('%H:%M:%S')} | "
-            f"💹 ${price:>10,.2f} {price_change} | "
+            f"💹 ${price_str:>12} {price_change} | "
             f"{change_color} 24h: {change_pct:>+6.2f}% | "
             f"{regime_str:<18} | "
             f"{signal_str:<10} | "
@@ -325,15 +384,22 @@ class RealtimeMonitorPro:
         print(f"📊 详细更新 ({datetime.now().strftime('%H:%M:%S')})")
         print(f"{'─'*80}")
 
-        # 价格信息
+        # 价格信息（使用动态精度）
+        current_price = ticker.get('last', 0)
+        high_price = ticker.get('high', 0)
+        low_price = ticker.get('low', 0)
+
         print(f"【价格】")
-        print(f"  当前: ${ticker.get('last', 0):,.2f}")
-        print(f"  最高: ${ticker.get('high', 0):,.2f}  |  最低: ${ticker.get('low', 0):,.2f}")
+        print(f"  当前: ${self._format_price(current_price)}")
+        print(f"  最高: ${self._format_price(high_price)}  |  最低: ${self._format_price(low_price)}")
         print(f"  成交量: {ticker.get('quoteVolume', 0):,.0f} USDT")
 
-        # 技术指标
+        # 技术指标（使用动态精度）
+        ema50 = market_data['ema_50']
+        ema200 = market_data['ema_200']
+
         print(f"\n【技术指标】")
-        print(f"  EMA50:  ${market_data['ema_50']:,.2f}  |  EMA200: ${market_data['ema_200']:,.2f}")
+        print(f"  EMA50:  ${self._format_price(ema50)}  |  EMA200: ${self._format_price(ema200)}")
         print(f"  RSI: {market_data['rsi']:.1f}  |  MACD: {market_data['macd']:.2f}  |  ADX: {market_data['adx']:.1f}")
 
         # 价格趋势
@@ -342,7 +408,7 @@ class RealtimeMonitorPro:
             trend = '↗️ 上升' if recent_prices[-1] > recent_prices[0] else '↘️ 下降' if recent_prices[-1] < recent_prices[0] else '→ 平稳'
             volatility = max(recent_prices) - min(recent_prices)
             print(f"\n【短期趋势】(最近10次)")
-            print(f"  趋势: {trend}  |  波动: ${volatility:.2f}")
+            print(f"  趋势: {trend}  |  波动: ${self._format_price(volatility)}")
 
         print(f"{'─'*80}\n")
 
