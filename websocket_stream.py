@@ -89,58 +89,59 @@ class WebSocketStream:
         except AttributeError:
             use_websocket = False
 
-        if use_websocket:
-            # WebSocket 模式
-            logger.info(f"📡 WebSocket 实时模式")
-            while self.running:
-                try:
-                    ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe)
+        try:
+            if use_websocket:
+                # WebSocket 模式
+                logger.info(f"📡 WebSocket 实时模式")
+                while self.running:
+                    try:
+                        ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe)
 
-                    if ohlcv and len(ohlcv) > 0:
-                        # 最新K线
-                        latest = ohlcv[-1]
-                        kline = self._format_kline(latest)
-
-                        if callback:
-                            await callback(kline)
-
-                except Exception as e:
-                    logger.error(f"❌ WebSocket 错误: {e}")
-                    await asyncio.sleep(5)  # 错误后等待5秒重连
-
-        else:
-            # 轮询模式
-            interval = self._get_poll_interval(timeframe)
-            logger.info(f"📊 使用轮询模式（每 {interval} 秒更新）")
-
-            last_timestamp = 0
-
-            while self.running:
-                try:
-                    ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=1)
-
-                    if ohlcv and len(ohlcv) > 0:
-                        latest = ohlcv[-1]
-
-                        # 只在新K线时触发回调
-                        if latest[0] > last_timestamp:
-                            last_timestamp = latest[0]
+                        if ohlcv and len(ohlcv) > 0:
+                            # 最新K线
+                            latest = ohlcv[-1]
                             kline = self._format_kline(latest)
 
                             if callback:
                                 await callback(kline)
-                        else:
-                            # 更新当前K线
-                            kline = self._format_kline(latest)
-                            if callback:
-                                await callback(kline)
 
-                    # 根据时间周期调整轮询间隔
-                    await asyncio.sleep(interval)
+                    except Exception as e:
+                        logger.error(f"❌ WebSocket 错误: {e}")
+                        await asyncio.sleep(5)  # 错误后等待5秒重连
 
-                except Exception as e:
-                    logger.error(f"❌ 轮询错误: {e}")
-                    await asyncio.sleep(10)
+            else:
+                # 轮询模式
+                interval = self._get_poll_interval(timeframe)
+                logger.info(f"📊 使用轮询模式（每 {interval} 秒更新）")
+
+                last_timestamp = 0
+
+                while self.running:
+                    try:
+                        ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=1)
+
+                        if ohlcv and len(ohlcv) > 0:
+                            latest = ohlcv[-1]
+
+                            # 只在新K线时触发回调
+                            if latest[0] > last_timestamp:
+                                last_timestamp = latest[0]
+                                kline = self._format_kline(latest)
+
+                                if callback:
+                                    await callback(kline)
+                            else:
+                                # 更新当前K线
+                                kline = self._format_kline(latest)
+                                if callback:
+                                    await callback(kline)
+
+                        # 根据时间周期调整轮询间隔
+                        await asyncio.sleep(interval)
+
+                    except Exception as e:
+                        logger.error(f"❌ 轮询错误: {e}")
+                        await asyncio.sleep(10)
 
         except Exception as e:
             logger.error(f"❌ 监听失败: {e}")
