@@ -9,6 +9,7 @@ ta-lib>=0.4.28
 
 # 交易所接口（使用兼容 Python 3.10 的版本）
 ccxt>=4.0.0,<4.3.0
+ccxt.pro>=4.0.0,<4.3.0  # WebSocket 支持
 requests>=2.31.0
 
 # 工具库
