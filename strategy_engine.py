@@ -135,7 +135,7 @@ class StrategyEngine:
 
     def generate_trend_signal(self, df: pd.DataFrame) -> Dict:
         """
-        趋势跟随信号
+        趋势跟随信号（放宽条件，更实用）
 
         Args:
             df: 包含指标的DataFrame
@@ -161,42 +161,90 @@ class StrategyEngine:
         macd_cross_up = prev['macd'] <= prev['macd_signal'] and latest['macd'] > latest['macd_signal']
         macd_cross_down = prev['macd'] >= prev['macd_signal'] and latest['macd'] < latest['macd_signal']
 
-        # ADX趋势强度
-        adx_strong = latest['adx'] > self.trend_params['adx_threshold']
+        # 趋势状态
+        in_uptrend = latest['ema_50'] > latest['ema_200']
+        in_downtrend = latest['ema_50'] < latest['ema_200']
 
-        # 买入信号
-        if ema_cross_up or (latest['ema_50'] > latest['ema_200'] and macd_cross_up and adx_strong):
+        # MACD 状态
+        macd_bullish = latest['macd'] > latest['macd_signal']
+        macd_bearish = latest['macd'] < latest['macd_signal']
+
+        # RSI 状态
+        rsi = latest['rsi']
+        rsi_bullish = 40 < rsi < 70  # RSI 在健康的多头区间
+        rsi_bearish = 30 < rsi < 60  # RSI 在健康的空头区间
+
+        # 买入信号（放宽条件）
+        buy_strength = 0
+        buy_reasons = []
+
+        if ema_cross_up:
+            buy_strength += 50
+            buy_reasons.append('EMA金叉(50上穿200)')
+        elif in_uptrend:
+            buy_strength += 20
+            buy_reasons.append('处于上升趋势')
+
+        if macd_cross_up:
+            buy_strength += 40
+            buy_reasons.append('MACD金叉')
+        elif macd_bullish:
+            buy_strength += 15
+            buy_reasons.append('MACD多头排列')
+
+        if rsi_bullish:
+            buy_strength += 15
+            buy_reasons.append(f'RSI健康({rsi:.1f})')
+
+        # ADX 确认（可选）
+        if latest['adx'] > 25:
+            buy_strength += 10
+            buy_reasons.append(f'趋势明确(ADX:{latest["adx"]:.1f})')
+
+        # 如果信号强度 > 30，发出买入信号
+        if buy_strength >= 30:
             signal['action'] = 'BUY'
-            signal['strength'] = 0
-            if ema_cross_up:
-                signal['strength'] += 40
-                signal['reasons'].append('EMA金叉(50上穿200)')
-            if macd_cross_up:
-                signal['strength'] += 30
-                signal['reasons'].append('MACD金叉')
-            if adx_strong:
-                signal['strength'] += 30
-                signal['reasons'].append(f'ADX强趋势({latest["adx"]:.1f})')
+            signal['strength'] = min(buy_strength, 100)
+            signal['reasons'] = buy_reasons
 
-        # 卖出信号
-        elif ema_cross_down or (latest['ema_50'] < latest['ema_200'] and macd_cross_down):
-            signal['action'] = 'SELL'
-            signal['strength'] = 0
+        # 卖出信号（放宽条件）
+        else:
+            sell_strength = 0
+            sell_reasons = []
+
             if ema_cross_down:
-                signal['strength'] += 40
-                signal['reasons'].append('EMA死叉(50下穿200)')
+                sell_strength += 50
+                sell_reasons.append('EMA死叉(50下穿200)')
+            elif in_downtrend:
+                sell_strength += 20
+                sell_reasons.append('处于下降趋势')
+
             if macd_cross_down:
-                signal['strength'] += 30
-                signal['reasons'].append('MACD死叉')
-            if adx_strong:
-                signal['strength'] += 30
-                signal['reasons'].append(f'ADX强趋势({latest["adx"]:.1f})')
+                sell_strength += 40
+                sell_reasons.append('MACD死叉')
+            elif macd_bearish:
+                sell_strength += 15
+                sell_reasons.append('MACD空头排列')
+
+            if rsi_bearish:
+                sell_strength += 15
+                sell_reasons.append(f'RSI偏弱({rsi:.1f})')
+
+            if latest['adx'] > 25:
+                sell_strength += 10
+                sell_reasons.append(f'趋势明确(ADX:{latest["adx"]:.1f})')
+
+            # 如果信号强度 > 30，发出卖出信号
+            if sell_strength >= 30:
+                signal['action'] = 'SELL'
+                signal['strength'] = min(sell_strength, 100)
+                signal['reasons'] = sell_reasons
 
         return signal
 
     def generate_mean_reversion_signal(self, df: pd.DataFrame) -> Dict:
         """
-        均值回归信号
+        均值回归信号（震荡市场）
 
         Args:
             df: 包含指标的DataFrame
@@ -219,19 +267,50 @@ class StrategyEngine:
         bb_lower = latest['bb_lower']
         bb_middle = latest['bb_middle']
 
-        # 超卖 + 价格触及下轨
-        if rsi < self.mean_reversion_params['rsi_oversold'] and close <= bb_lower:
-            signal['action'] = 'BUY'
-            signal['strength'] = int((30 - rsi) * 2)  # RSI越低，信号越强
-            signal['reasons'].append(f'RSI超卖({rsi:.1f})')
-            signal['reasons'].append(f'价格触及布林下轨')
+        # 计算布林带位置（0=下轨，0.5=中轨，1=上轨）
+        bb_range = bb_upper - bb_lower
+        bb_position = (close - bb_lower) / bb_range if bb_range > 0 else 0.5
 
-        # 超买 + 价格触及上轨
-        elif rsi > self.mean_reversion_params['rsi_overbought'] and close >= bb_upper:
-            signal['action'] = 'SELL'
-            signal['strength'] = int((rsi - 70) * 2)  # RSI越高，信号越强
-            signal['reasons'].append(f'RSI超买({rsi:.1f})')
-            signal['reasons'].append(f'价格触及布林上轨')
+        # 买入信号（放宽条件）
+        buy_strength = 0
+        buy_reasons = []
+
+        # 条件1: RSI 超卖（降低到 35）
+        if rsi < 35:
+            buy_strength += int((35 - rsi) * 2)
+            buy_reasons.append(f'RSI偏低({rsi:.1f})')
+
+        # 条件2: 价格接近布林带下轨（放宽到下方 30%）
+        if bb_position < 0.3:
+            buy_strength += int((0.3 - bb_position) * 100)
+            buy_reasons.append(f'价格接近布林下轨')
+
+        # 如果有任一条件满足，发出买入信号
+        if buy_strength > 20:  # 信号强度 > 20 就提示
+            signal['action'] = 'BUY'
+            signal['strength'] = min(buy_strength, 100)
+            signal['reasons'] = buy_reasons
+
+        # 卖出信号（放宽条件）
+        else:
+            sell_strength = 0
+            sell_reasons = []
+
+            # 条件1: RSI 超买（降低到 65）
+            if rsi > 65:
+                sell_strength += int((rsi - 65) * 2)
+                sell_reasons.append(f'RSI偏高({rsi:.1f})')
+
+            # 条件2: 价格接近布林带上轨（放宽到上方 30%）
+            if bb_position > 0.7:
+                sell_strength += int((bb_position - 0.7) * 100)
+                sell_reasons.append(f'价格接近布林上轨')
+
+            # 如果有任一条件满足，发出卖出信号
+            if sell_strength > 20:
+                signal['action'] = 'SELL'
+                signal['strength'] = min(sell_strength, 100)
+                signal['reasons'] = sell_reasons
 
         return signal
 
