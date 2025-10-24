@@ -281,7 +281,72 @@ class StrategyEngine:
         signal['market_regime'] = market_regime
         signal['market_data'] = self._get_market_summary(df)
 
+        # 添加具体的交易价格（买入价、止盈价、止损价）
+        signal['trading_plan'] = self._calculate_trading_plan(df, signal, market_regime)
+
         return signal
+
+    def _calculate_trading_plan(self, df: pd.DataFrame, signal: Dict, market_regime: str) -> Dict:
+        """
+        计算具体的交易计划（买入价、止盈价、止损价）
+
+        Args:
+            df: DataFrame
+            signal: 信号字典
+            market_regime: 市场状态
+
+        Returns:
+            交易计划字典
+        """
+        latest = df.iloc[-1]
+        current_price = float(latest['close'])
+        action = signal['action']
+
+        # 如果是持有，不需要计算
+        if action == 'HOLD':
+            return {
+                'entry_price': None,
+                'stop_loss_price': None,
+                'take_profit_price': None,
+                'risk_reward_ratio': None
+            }
+
+        # 根据市场状态选择参数
+        if market_regime in ['STRONG_TREND', 'TREND']:
+            # 趋势市场参数
+            stop_loss_pct = self.trend_params['stop_loss_pct']  # 1.5%
+            take_profit_pct = self.trend_params['take_profit_pct']  # 3%
+        else:
+            # 震荡市场参数
+            stop_loss_pct = self.mean_reversion_params['stop_loss_pct']  # 1.5%
+            take_profit_pct = 0.02  # 震荡市2%止盈
+
+        # 计算买入价（当前价格）
+        entry_price = current_price
+
+        # 计算止损和止盈价格
+        if action == 'BUY':
+            # 买入信号
+            stop_loss_price = entry_price * (1 - stop_loss_pct)  # 下方止损
+            take_profit_price = entry_price * (1 + take_profit_pct)  # 上方止盈
+        else:  # SELL
+            # 卖出信号（做空）
+            stop_loss_price = entry_price * (1 + stop_loss_pct)  # 上方止损
+            take_profit_price = entry_price * (1 - take_profit_pct)  # 下方止盈
+
+        # 计算风险回报比
+        risk = abs(entry_price - stop_loss_price)
+        reward = abs(take_profit_price - entry_price)
+        risk_reward_ratio = reward / risk if risk > 0 else 0
+
+        return {
+            'entry_price': entry_price,
+            'stop_loss_price': stop_loss_price,
+            'take_profit_price': take_profit_price,
+            'risk_reward_ratio': risk_reward_ratio,
+            'stop_loss_pct': stop_loss_pct * 100,  # 转为百分比
+            'take_profit_pct': take_profit_pct * 100
+        }
 
     def _get_market_summary(self, df: pd.DataFrame) -> Dict:
         """获取市场摘要信息"""

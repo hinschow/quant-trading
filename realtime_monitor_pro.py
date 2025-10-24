@@ -271,11 +271,12 @@ class RealtimeMonitorPro:
         print(f"{'='*80}")
 
     def _display_signal(self, signal: Dict):
-        """显示信号详情"""
+        """显示信号详情（简化版）"""
         market_data = signal['market_data']
         action = signal['action']
         strength = signal['strength']
         regime = signal['market_regime']
+        trading_plan = signal.get('trading_plan', {})
 
         # 市场状态
         regime_desc = {
@@ -293,20 +294,41 @@ class RealtimeMonitorPro:
             'HOLD': '⚪'
         }
 
-        print(f"\n【市场状态】")
-        print(f"  {regime_desc.get(regime, regime)} | 策略: {signal['type']}")
+        print(f"\n【市场状态】 {regime_desc.get(regime, regime)}")
+        print(f"\n【交易信号】 {action_icon.get(action, action)} {action}")
+        print(f"  信号强度: {strength}/100 {'█' * (strength // 10)}{'░' * (10 - strength // 10)}")
 
-        print(f"\n【核心指标】")
-        print(f"  RSI:  {market_data['rsi']:.1f}  |  MACD: {market_data['macd']:.2f}  |  ADX: {market_data['adx']:.1f}")
+        # 显示交易计划（重点）
+        if action != 'HOLD' and trading_plan.get('entry_price'):
+            print(f"\n{'='*60}")
+            print(f"📋 交易计划")
+            print(f"{'='*60}")
 
-        print(f"\n【交易信号】")
-        print(f"  {action_icon.get(action, action)} 操作: {action}")
-        print(f"  强度: {strength}/100 {'█' * (strength // 10)}{'░' * (10 - strength // 10)}")
+            entry = trading_plan['entry_price']
+            stop_loss = trading_plan['stop_loss_price']
+            take_profit = trading_plan['take_profit_price']
 
+            if action == 'BUY':
+                print(f"  🟢 买入价格:  ${self._format_price(entry)}")
+                print(f"  🎯 止盈目标:  ${self._format_price(take_profit)}  (+{trading_plan['take_profit_pct']:.1f}%)")
+                print(f"  🛑 止损价格:  ${self._format_price(stop_loss)}  (-{trading_plan['stop_loss_pct']:.1f}%)")
+            else:  # SELL
+                print(f"  🔴 卖出价格:  ${self._format_price(entry)}")
+                print(f"  🎯 止盈目标:  ${self._format_price(take_profit)}  (-{trading_plan['take_profit_pct']:.1f}%)")
+                print(f"  🛑 止损价格:  ${self._format_price(stop_loss)}  (+{trading_plan['stop_loss_pct']:.1f}%)")
+
+            print(f"\n  💰 风险回报比: 1:{trading_plan['risk_reward_ratio']:.2f}")
+            print(f"{'='*60}")
+
+        # 显示理由
         if signal['reasons']:
-            print(f"\n  理由:")
+            print(f"\n【信号理由】")
             for reason in signal['reasons']:
-                print(f"    • {reason}")
+                print(f"  • {reason}")
+
+        # 显示关键指标
+        print(f"\n【关键指标】")
+        print(f"  RSI: {market_data['rsi']:.1f}  |  ADX: {market_data['adx']:.1f}")
 
     def _display_realtime_status(self):
         """显示实时状态（单行更新）"""
@@ -332,14 +354,13 @@ class RealtimeMonitorPro:
         change_color = '🟢' if change_pct >= 0 else '🔴'
 
         # 信号状态
-        signal_str = '⚪ HOLD'
-        strength_str = '0'
-        regime_str = '...'
+        signal_str = '⚪ 观望'
+        trading_info = ''
 
         if self.latest_signal:
             action = self.latest_signal['action']
-            strength = self.latest_signal['strength']
             regime = self.latest_signal['market_regime']
+            trading_plan = self.latest_signal.get('trading_plan', {})
 
             action_icon = {'BUY': '🟢', 'SELL': '🔴', 'HOLD': '⚪'}.get(action, action)
             regime_emoji = {
@@ -350,9 +371,13 @@ class RealtimeMonitorPro:
                 'NEUTRAL': '😐'
             }.get(regime, '📊')
 
-            signal_str = f"{action_icon} {action}"
-            strength_str = f"{strength}"
-            regime_str = f"{regime_emoji} {regime}"
+            signal_str = f"{regime_emoji} {action_icon} {action}"
+
+            # 如果有交易信号，显示止盈止损
+            if action != 'HOLD' and trading_plan.get('entry_price'):
+                tp = trading_plan['take_profit_price']
+                sl = trading_plan['stop_loss_price']
+                trading_info = f" | 🎯 {self._format_price(tp)} | 🛑 {self._format_price(sl)}"
 
         # 格式化价格（动态精度）
         price_str = self._format_price(price)
@@ -361,11 +386,8 @@ class RealtimeMonitorPro:
         status_line = (
             f"\r{datetime.now().strftime('%H:%M:%S')} | "
             f"💹 ${price_str:>12} {price_change} | "
-            f"{change_color} 24h: {change_pct:>+6.2f}% | "
-            f"{regime_str:<18} | "
-            f"{signal_str:<10} | "
-            f"强度: {strength_str:>3}/100 | "
-            f"更新: {self.ticker_count:>5}"
+            f"{change_color} {change_pct:>+5.2f}% | "
+            f"{signal_str:<15}{trading_info}"
         )
 
         # 单行更新
@@ -379,6 +401,7 @@ class RealtimeMonitorPro:
         ticker = self.latest_ticker
         signal = self.latest_signal
         market_data = signal['market_data']
+        trading_plan = signal.get('trading_plan', {})
 
         print(f"\n\n{'─'*80}")
         print(f"📊 详细更新 ({datetime.now().strftime('%H:%M:%S')})")
@@ -389,26 +412,30 @@ class RealtimeMonitorPro:
         high_price = ticker.get('high', 0)
         low_price = ticker.get('low', 0)
 
-        print(f"【价格】")
-        print(f"  当前: ${self._format_price(current_price)}")
-        print(f"  最高: ${self._format_price(high_price)}  |  最低: ${self._format_price(low_price)}")
-        print(f"  成交量: {ticker.get('quoteVolume', 0):,.0f} USDT")
+        print(f"【当前价格】")
+        print(f"  💹 ${self._format_price(current_price)}")
+        print(f"  24h: 最高 ${self._format_price(high_price)} | 最低 ${self._format_price(low_price)}")
 
-        # 技术指标（使用动态精度）
-        ema50 = market_data['ema_50']
-        ema200 = market_data['ema_200']
+        # 交易计划（如果有信号）
+        action = signal['action']
+        if action != 'HOLD' and trading_plan.get('entry_price'):
+            print(f"\n【交易计划】")
+            entry = trading_plan['entry_price']
+            tp = trading_plan['take_profit_price']
+            sl = trading_plan['stop_loss_price']
 
-        print(f"\n【技术指标】")
-        print(f"  EMA50:  ${self._format_price(ema50)}  |  EMA200: ${self._format_price(ema200)}")
-        print(f"  RSI: {market_data['rsi']:.1f}  |  MACD: {market_data['macd']:.2f}  |  ADX: {market_data['adx']:.1f}")
+            if action == 'BUY':
+                print(f"  🟢 买入: ${self._format_price(entry)}")
+                print(f"  🎯 止盈: ${self._format_price(tp)} (+{trading_plan['take_profit_pct']:.1f}%)")
+                print(f"  🛑 止损: ${self._format_price(sl)} (-{trading_plan['stop_loss_pct']:.1f}%)")
+            else:
+                print(f"  🔴 卖出: ${self._format_price(entry)}")
+                print(f"  🎯 止盈: ${self._format_price(tp)}")
+                print(f"  🛑 止损: ${self._format_price(sl)}")
 
-        # 价格趋势
-        if len(self.price_history) >= 10:
-            recent_prices = [p['price'] for p in list(self.price_history)[-10:]]
-            trend = '↗️ 上升' if recent_prices[-1] > recent_prices[0] else '↘️ 下降' if recent_prices[-1] < recent_prices[0] else '→ 平稳'
-            volatility = max(recent_prices) - min(recent_prices)
-            print(f"\n【短期趋势】(最近10次)")
-            print(f"  趋势: {trend}  |  波动: ${self._format_price(volatility)}")
+        # 关键指标
+        print(f"\n【关键指标】")
+        print(f"  RSI: {market_data['rsi']:.1f}  |  ADX: {market_data['adx']:.1f}")
 
         print(f"{'─'*80}\n")
 
