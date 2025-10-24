@@ -25,11 +25,15 @@ class WebSocketStream:
             proxy: 代理地址
         """
         self.exchange_name = exchange_name
+        self.proxy = proxy
 
-        # 初始化交易所（pro版本支持WebSocket）
+        # 配置
         config = {
             'enableRateLimit': True,
-            'options': {'defaultType': 'spot'}
+            'options': {
+                'defaultType': 'spot',  # 现货市场
+                'defaultMarket': 'spot'
+            }
         }
 
         if proxy:
@@ -38,16 +42,25 @@ class WebSocketStream:
                 'https': proxy
             }
 
+        # 先尝试使用普通 ccxt（更稳定）
         try:
-            # 使用 ccxt.pro 的异步WebSocket支持
-            exchange_class = getattr(ccxt.pro, exchange_name)
-            self.exchange = exchange_class(config)
-            logger.info(f"✅ 初始化 {exchange_name} WebSocket")
-        except AttributeError:
-            # 如果不支持 pro，回退到普通轮询
-            logger.warning(f"⚠️  {exchange_name} 不支持 WebSocket，使用轮询模式")
             exchange_class = getattr(ccxt, exchange_name)
             self.exchange = exchange_class(config)
+            logger.info(f"✅ 初始化 {exchange_name} (轮询模式)")
+            self.has_pro = False
+        except AttributeError:
+            raise ValueError(f"不支持的交易所: {exchange_name}")
+
+        # 检查是否有 pro 版本可用
+        try:
+            exchange_class_pro = getattr(ccxt.pro, exchange_name)
+            self.exchange_pro = exchange_class_pro(config)
+            self.has_pro = True
+            logger.info(f"✅ ccxt.pro 可用")
+        except (AttributeError, ImportError):
+            self.exchange_pro = None
+            self.has_pro = False
+            logger.info(f"ℹ️  ccxt.pro 不可用，将使用轮询模式")
 
         self.running = False
         self.callbacks: Dict[str, Callable] = {}
@@ -70,32 +83,30 @@ class WebSocketStream:
 
         logger.info(f"📡 开始监听 {symbol} {timeframe} K线")
 
-        # 尝试使用 WebSocket，失败则降级到轮询
+        # 尝试使用 WebSocket（如果有 pro 版本）
         use_websocket = False
 
-        try:
-            if hasattr(self.exchange, 'watch_ohlcv'):
+        if self.has_pro and self.exchange_pro:
+            try:
                 # 测试 WebSocket 是否真的支持
-                try:
-                    test_ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe)
-                    use_websocket = True
-                    logger.info(f"✅ 使用 WebSocket 模式")
-                except Exception as ws_error:
-                    if 'not supported' in str(ws_error):
-                        logger.warning(f"⚠️  {self.exchange_name} 不支持 OHLCV WebSocket")
-                        use_websocket = False
-                    else:
-                        raise
-        except AttributeError:
-            use_websocket = False
+                test_ohlcv = await self.exchange_pro.watch_ohlcv(symbol, timeframe)
+                use_websocket = True
+                logger.info(f"✅ 使用 WebSocket 实时模式")
+            except Exception as ws_error:
+                if 'not supported' in str(ws_error).lower():
+                    logger.info(f"ℹ️  WebSocket 不支持 OHLCV，使用轮询模式")
+                    use_websocket = False
+                else:
+                    logger.warning(f"⚠️  WebSocket 测试失败: {ws_error}")
+                    use_websocket = False
 
         try:
             if use_websocket:
                 # WebSocket 模式
-                logger.info(f"📡 WebSocket 实时模式")
+                logger.info(f"📡 开始 WebSocket 监听...")
                 while self.running:
                     try:
-                        ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe)
+                        ohlcv = await self.exchange_pro.watch_ohlcv(symbol, timeframe)
 
                         if ohlcv and len(ohlcv) > 0:
                             # 最新K线
@@ -112,12 +123,13 @@ class WebSocketStream:
             else:
                 # 轮询模式
                 interval = self._get_poll_interval(timeframe)
-                logger.info(f"📊 使用轮询模式（每 {interval} 秒更新）")
+                logger.info(f"📊 轮询模式（每 {interval} 秒）")
 
                 last_timestamp = 0
 
                 while self.running:
                     try:
+                        # 使用普通 ccxt exchange（现货市场）
                         ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=1)
 
                         if ohlcv and len(ohlcv) > 0:
@@ -234,9 +246,22 @@ class WebSocketStream:
     async def close(self):
         """关闭连接"""
         self.running = False
+
+        # 关闭 pro 连接
+        if self.exchange_pro and hasattr(self.exchange_pro, 'close'):
+            try:
+                await self.exchange_pro.close()
+            except:
+                pass
+
+        # 关闭普通连接
         if hasattr(self.exchange, 'close'):
-            await self.exchange.close()
-        logger.info("🔌 WebSocket 连接已关闭")
+            try:
+                await self.exchange.close()
+            except:
+                pass
+
+        logger.info("🔌 连接已关闭")
 
     def stop(self):
         """停止监听"""
