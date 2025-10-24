@@ -162,13 +162,13 @@ class WebSocketStream:
         finally:
             await self.close()
 
-    async def watch_trades(
+    async def watch_ticker(
         self,
         symbol: str,
         callback: Optional[Callable] = None
     ):
         """
-        监听实时成交（可用于更频繁的价格更新）
+        监听实时ticker（价格、成交量等）
 
         Args:
             symbol: 交易对
@@ -176,27 +176,59 @@ class WebSocketStream:
         """
         self.running = True
 
-        logger.info(f"📡 开始监听 {symbol} 实时成交")
+        logger.info(f"📡 开始监听 {symbol} 实时ticker")
+
+        # 尝试 WebSocket ticker
+        use_websocket = False
+
+        if self.has_pro and self.exchange_pro:
+            try:
+                # 测试 ticker WebSocket
+                test_ticker = await self.exchange_pro.watch_ticker(symbol)
+                use_websocket = True
+                logger.info(f"✅ 使用 ticker WebSocket")
+            except Exception as e:
+                if 'not supported' in str(e).lower():
+                    logger.info(f"ℹ️  ticker WebSocket 不支持，使用轮询")
+                    use_websocket = False
+                else:
+                    logger.warning(f"⚠️  ticker WebSocket 测试失败: {e}")
+                    use_websocket = False
 
         try:
-            if hasattr(self.exchange, 'watch_trades'):
+            if use_websocket:
+                # WebSocket 模式（实时）
+                logger.info(f"📡 ticker WebSocket 实时模式")
                 while self.running:
                     try:
-                        trades = await self.exchange.watch_trades(symbol)
+                        ticker = await self.exchange_pro.watch_ticker(symbol)
 
-                        if trades and len(trades) > 0:
-                            for trade in trades:
-                                if callback:
-                                    await callback(trade)
+                        if ticker and callback:
+                            await callback(ticker)
 
                     except Exception as e:
-                        logger.error(f"❌ WebSocket 错误: {e}")
+                        logger.error(f"❌ ticker WebSocket 错误: {e}")
                         await asyncio.sleep(5)
             else:
-                logger.warning(f"⚠️  {self.exchange_name} 不支持实时成交流")
+                # 轮询模式（快速轮询ticker）
+                logger.info(f"📊 ticker 轮询模式（每 1 秒）")
+
+                while self.running:
+                    try:
+                        ticker = self.exchange.fetch_ticker(symbol)
+
+                        if ticker and callback:
+                            await callback(ticker)
+
+                        # ticker 轮询间隔：1秒
+                        await asyncio.sleep(1)
+
+                    except Exception as e:
+                        logger.error(f"❌ ticker 轮询错误: {e}")
+                        await asyncio.sleep(5)
 
         except Exception as e:
-            logger.error(f"❌ 监听失败: {e}")
+            logger.error(f"❌ ticker 监听失败: {e}")
             raise
 
         finally:
