@@ -16,23 +16,30 @@ logger = logging.getLogger(__name__)
 class WebSocketStream:
     """WebSocket 数据流管理器"""
 
-    def __init__(self, exchange_name: str = 'binance', proxy: Optional[str] = None):
+    def __init__(
+        self,
+        exchange_name: str = 'binance',
+        proxy: Optional[str] = None,
+        market_type: str = 'spot'
+    ):
         """
         初始化WebSocket流
 
         Args:
             exchange_name: 交易所名称
             proxy: 代理地址
+            market_type: 市场类型，'spot' (现货) 或 'future' (合约)
         """
         self.exchange_name = exchange_name
         self.proxy = proxy
+        self.market_type = market_type
 
         # 配置
         config = {
             'enableRateLimit': True,
             'options': {
-                'defaultType': 'spot',  # 现货市场
-                'defaultMarket': 'spot'
+                'defaultType': market_type,  # 现货或合约市场
+                'defaultMarket': market_type
             }
         }
 

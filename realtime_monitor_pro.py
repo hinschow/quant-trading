@@ -33,7 +33,8 @@ class RealtimeMonitorPro:
         symbol: str,
         timeframe: str = '15m',
         exchange: str = 'binance',
-        proxy: str = None
+        proxy: str = None,
+        market_type: str = 'spot'
     ):
         """
         初始化增强版监控器
@@ -43,15 +44,17 @@ class RealtimeMonitorPro:
             timeframe: K线时间周期（用于信号）
             exchange: 交易所
             proxy: 代理地址
+            market_type: 市场类型，'spot' (现货) 或 'future' (合约)
         """
         self.symbol = symbol
         self.timeframe = timeframe
         self.exchange_name = exchange
         self.proxy = proxy
+        self.market_type = market_type
 
         # 两个 WebSocket 流
-        self.ticker_stream = WebSocketStream(exchange, proxy)  # ticker流
-        self.kline_stream = WebSocketStream(exchange, proxy)   # K线流
+        self.ticker_stream = WebSocketStream(exchange, proxy, market_type)  # ticker流
+        self.kline_stream = WebSocketStream(exchange, proxy, market_type)   # K线流
 
         # 实时信号引擎
         self.engine = RealtimeSignalEngine(symbol, timeframe)
@@ -92,7 +95,7 @@ class RealtimeMonitorPro:
         try:
             # 1. 获取历史数据初始化
             print(f"📥 正在获取历史数据...")
-            collector = DataCollector(self.exchange_name, self.proxy)
+            collector = DataCollector(self.exchange_name, self.proxy, self.market_type)
             historical_df = collector.fetch_ohlcv(self.symbol, self.timeframe, limit=500)
 
             # 2. 初始化信号引擎
@@ -469,29 +472,33 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 监听BTC（实时价格 + 15分钟信号）
+  # 监听现货BTC（实时价格 + 15分钟信号）
   python realtime_monitor_pro.py BTC/USDT -t 15m --proxy http://127.0.0.1:7890
 
-  # 监听ETH（实时价格 + 1小时信号）
-  python realtime_monitor_pro.py ETH/USDT -t 1h --proxy http://127.0.0.1:7890
+  # 监听合约ETH（实时价格 + 1小时信号）
+  python realtime_monitor_pro.py ETH/USDT:USDT -t 1h -m future --proxy http://127.0.0.1:7890
 
-  # 短线交易（实时价格 + 5分钟信号）
-  python realtime_monitor_pro.py BTC/USDT -t 5m --proxy http://127.0.0.1:7890
+  # 监听只在合约市场的币种
+  python realtime_monitor_pro.py PEPE/USDT:USDT -t 15m -m future --proxy http://127.0.0.1:7890
 
 特点:
   - 💹 实时价格流（秒级更新）
   - 📊 K线信号流（准确的买卖建议）
+  - 🔄 支持现货和合约市场
   - 📈 价格趋势显示
   - 🔔 信号变化提醒
   - 📉 技术指标实时更新
         """
     )
 
-    parser.add_argument('symbol', help='交易对，如 BTC/USDT')
+    parser.add_argument('symbol', help='交易对，如 BTC/USDT 或 BTC/USDT:USDT (合约)')
     parser.add_argument('-t', '--timeframe', default='15m',
                         help='K线周期 (1m, 5m, 15m, 1h, 4h), 默认: 15m')
     parser.add_argument('-e', '--exchange', default='binance',
                         help='交易所, 默认: binance')
+    parser.add_argument('-m', '--market', default='spot',
+                        choices=['spot', 'future'],
+                        help='市场类型: spot (现货) 或 future (合约), 默认: spot')
     parser.add_argument('--proxy', help='代理地址，如 http://127.0.0.1:7890')
 
     args = parser.parse_args()
@@ -501,7 +508,8 @@ async def main():
         symbol=args.symbol,
         timeframe=args.timeframe,
         exchange=args.exchange,
-        proxy=args.proxy
+        proxy=args.proxy,
+        market_type=args.market
     )
 
     # 启动

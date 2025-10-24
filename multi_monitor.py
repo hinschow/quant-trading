@@ -32,7 +32,8 @@ class MultiCoinMonitor:
         symbols: List[str],
         timeframe: str = '15m',
         exchange: str = 'binance',
-        proxy: str = None
+        proxy: str = None,
+        market_type: str = 'spot'
     ):
         """
         初始化多币种监控器
@@ -42,11 +43,13 @@ class MultiCoinMonitor:
             timeframe: K线周期
             exchange: 交易所
             proxy: 代理地址
+            market_type: 市场类型，'spot' (现货) 或 'future' (合约)
         """
         self.symbols = symbols
         self.timeframe = timeframe
         self.exchange_name = exchange
         self.proxy = proxy
+        self.market_type = market_type
 
         # 每个币种的监控组件
         self.monitors = {}
@@ -64,10 +67,14 @@ class MultiCoinMonitor:
         self.signal_counts = {symbol: 0 for symbol in symbols}
         self.start_time = datetime.now()
 
+        # 市场类型说明
+        market_name = {'spot': '现货', 'future': '合约/永续'}[market_type]
+
         print(f"\n{'='*80}")
         print(f"🚀 多币种交易信号监控系统")
         print(f"{'='*80}")
         print(f"监控币种: {', '.join(symbols)}")
+        print(f"市场类型: {market_name} ({market_type})")
         print(f"时间周期: {timeframe}")
         print(f"交易所: {exchange}")
         print(f"代理: {proxy or '无'}")
@@ -114,7 +121,7 @@ class MultiCoinMonitor:
             print(f"  {symbol}: 获取历史数据...", end='', flush=True)
 
             # 获取历史数据
-            collector = DataCollector(self.exchange_name, self.proxy)
+            collector = DataCollector(self.exchange_name, self.proxy, self.market_type)
             historical_df = collector.fetch_ohlcv(symbol, self.timeframe, limit=500)
 
             # 创建信号引擎
@@ -125,7 +132,7 @@ class MultiCoinMonitor:
             engine.on_signal_change = lambda sig: self._on_signal_change(symbol, sig)
 
             # 创建数据流
-            stream = WebSocketStream(self.exchange_name, self.proxy)
+            stream = WebSocketStream(self.exchange_name, self.proxy, self.market_type)
 
             # 保存组件
             self.engines[symbol] = engine
@@ -289,17 +296,21 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 监控 BTC 和 ETH
+  # 监控现货市场的 BTC 和 ETH
   python multi_monitor.py BTC/USDT ETH/USDT -t 15m --proxy http://127.0.0.1:7890
 
-  # 监控多个币种
-  python multi_monitor.py BTC/USDT ETH/USDT SOL/USDT BNB/USDT -t 1h --proxy http://127.0.0.1:7890
+  # 监控合约市场（永续合约）
+  python multi_monitor.py BTC/USDT:USDT ETH/USDT:USDT -t 15m -m future --proxy http://127.0.0.1:7890
+
+  # 监控只在合约市场上线的币种
+  python multi_monitor.py PEPE/USDT:USDT BONK/USDT:USDT -t 1h -m future --proxy http://127.0.0.1:7890
 
   # 使用不同交易所
-  python multi_monitor.py BTC/USDT ETH/USDT -e okx --proxy http://127.0.0.1:7890
+  python multi_monitor.py BTC/USDT ETH/USDT -e okx -m future --proxy http://127.0.0.1:7890
 
 特点:
   - 📊 同时监控多个交易对
+  - 🔄 支持现货和合约市场
   - 💾 自动保存所有买卖信号到文件
   - 🔔 信号变化即时提醒
   - 📈 每分钟显示所有币种状态
@@ -308,14 +319,21 @@ async def main():
 信号保存位置:
   - CSV: signal_logs/signals_YYYYMMDD.csv
   - JSON: signal_logs/signals_YYYYMMDD.json
+
+注意事项:
+  - 现货交易对格式: BTC/USDT
+  - 合约交易对格式: BTC/USDT:USDT (注意有 :USDT 后缀)
         """
     )
 
-    parser.add_argument('symbols', nargs='+', help='交易对列表，如 BTC/USDT ETH/USDT')
+    parser.add_argument('symbols', nargs='+', help='交易对列表，如 BTC/USDT 或 BTC/USDT:USDT (合约)')
     parser.add_argument('-t', '--timeframe', default='15m',
                         help='K线周期 (1m, 5m, 15m, 1h, 4h), 默认: 15m')
     parser.add_argument('-e', '--exchange', default='binance',
                         help='交易所, 默认: binance')
+    parser.add_argument('-m', '--market', default='spot',
+                        choices=['spot', 'future'],
+                        help='市场类型: spot (现货) 或 future (合约), 默认: spot')
     parser.add_argument('--proxy', help='代理地址，如 http://127.0.0.1:7890')
 
     args = parser.parse_args()
@@ -325,7 +343,8 @@ async def main():
         symbols=args.symbols,
         timeframe=args.timeframe,
         exchange=args.exchange,
-        proxy=args.proxy
+        proxy=args.proxy,
+        market_type=args.market
     )
 
     # 启动
