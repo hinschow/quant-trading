@@ -13,7 +13,8 @@ from utils.indicators import (
     calculate_adx,
     calculate_bollinger_bands,
     calculate_bbw,
-    calculate_atr
+    calculate_atr,
+    calculate_kdj
 )
 from config.strategy_params import (
     TREND_FOLLOWING_PARAMS,
@@ -88,6 +89,18 @@ class StrategyEngine:
 
         # ATR (Average True Range)
         df['atr'] = calculate_atr(df, 14)
+
+        # KDJ 指标（震荡市场专用）
+        if self.mean_reversion_params.get('kdj_enabled', True):
+            kdj_k, kdj_d, kdj_j = calculate_kdj(
+                df,
+                self.mean_reversion_params['kdj_fastk_period'],
+                self.mean_reversion_params['kdj_slowk_period'],
+                self.mean_reversion_params['kdj_slowd_period']
+            )
+            df['kdj_k'] = kdj_k
+            df['kdj_d'] = kdj_d
+            df['kdj_j'] = kdj_j
 
         logger.info("✅ 技术指标计算完成")
         return df
@@ -286,7 +299,7 @@ class StrategyEngine:
 
     def generate_mean_reversion_signal(self, df: pd.DataFrame) -> Dict:
         """
-        均值回归信号（震荡市场）
+        均值回归信号（震荡市场，整合KDJ指标）
 
         Args:
             df: 包含指标的DataFrame
@@ -295,6 +308,7 @@ class StrategyEngine:
             信号字典
         """
         latest = df.iloc[-1]
+        prev = df.iloc[-2]
 
         signal = {
             'type': 'MEAN_REVERSION',
@@ -313,7 +327,27 @@ class StrategyEngine:
         bb_range = bb_upper - bb_lower
         bb_position = (close - bb_lower) / bb_range if bb_range > 0 else 0.5
 
-        # 买入信号（放宽条件）
+        # KDJ 指标（如果启用）
+        kdj_enabled = self.mean_reversion_params.get('kdj_enabled', True)
+        kdj_oversold = self.mean_reversion_params.get('kdj_oversold', 20)
+        kdj_overbought = self.mean_reversion_params.get('kdj_overbought', 80)
+
+        if kdj_enabled and 'kdj_k' in latest:
+            kdj_k = latest['kdj_k']
+            kdj_d = latest['kdj_d']
+            kdj_j = latest['kdj_j']
+            prev_kdj_k = prev['kdj_k']
+            prev_kdj_d = prev['kdj_d']
+
+            # KDJ金叉：K上穿D
+            kdj_cross_up = prev_kdj_k <= prev_kdj_d and kdj_k > kdj_d
+            # KDJ死叉：K下穿D
+            kdj_cross_down = prev_kdj_k >= prev_kdj_d and kdj_k < kdj_d
+        else:
+            kdj_k = kdj_d = kdj_j = None
+            kdj_cross_up = kdj_cross_down = False
+
+        # 买入信号（整合KDJ）
         buy_strength = 0
         buy_reasons = []
 
@@ -327,13 +361,24 @@ class StrategyEngine:
             buy_strength += int((0.3 - bb_position) * 100)
             buy_reasons.append(f'价格接近布林下轨')
 
-        # 如果有任一条件满足，发出买入信号
-        if buy_strength > 20:  # 信号强度 > 20 就提示
+        # 条件3: KDJ超卖区
+        if kdj_enabled and kdj_k is not None:
+            if kdj_k < kdj_oversold and kdj_d < kdj_oversold:
+                buy_strength += 15
+                buy_reasons.append(f'KDJ超卖区(K:{kdj_k:.1f}, D:{kdj_d:.1f})')
+
+            # 条件4: KDJ金叉（强烈买入信号）
+            if kdj_cross_up:
+                buy_strength += 20
+                buy_reasons.append('KDJ金叉(K上穿D)')
+
+        # 提高阈值到30，减少弱信号
+        if buy_strength >= 30:
             signal['action'] = 'BUY'
             signal['strength'] = min(buy_strength, 100)
             signal['reasons'] = buy_reasons
 
-        # 卖出信号（放宽条件）
+        # 卖出信号（整合KDJ）
         else:
             sell_strength = 0
             sell_reasons = []
@@ -348,8 +393,19 @@ class StrategyEngine:
                 sell_strength += int((bb_position - 0.7) * 100)
                 sell_reasons.append(f'价格接近布林上轨')
 
-            # 如果有任一条件满足，发出卖出信号
-            if sell_strength > 20:
+            # 条件3: KDJ超买区
+            if kdj_enabled and kdj_k is not None:
+                if kdj_k > kdj_overbought and kdj_d > kdj_overbought * 0.9:
+                    sell_strength += 15
+                    sell_reasons.append(f'KDJ超买区(K:{kdj_k:.1f}, D:{kdj_d:.1f})')
+
+                # 条件4: KDJ死叉（强烈卖出信号）
+                if kdj_cross_down:
+                    sell_strength += 20
+                    sell_reasons.append('KDJ死叉(K下穿D)')
+
+            # 提高阈值到30，减少弱信号
+            if sell_strength >= 30:
                 signal['action'] = 'SELL'
                 signal['strength'] = min(sell_strength, 100)
                 signal['reasons'] = sell_reasons
@@ -473,7 +529,7 @@ class StrategyEngine:
         """获取市场摘要信息"""
         latest = df.iloc[-1]
 
-        return {
+        summary = {
             'price': float(latest['close']),
             'ema_50': float(latest['ema_50']),
             'ema_200': float(latest['ema_200']),
@@ -486,6 +542,14 @@ class StrategyEngine:
             'bb_upper': float(latest['bb_upper']),
             'bb_lower': float(latest['bb_lower']),
         }
+
+        # 添加KDJ数据（如果有）
+        if 'kdj_k' in latest and not pd.isna(latest['kdj_k']):
+            summary['kdj_k'] = float(latest['kdj_k'])
+            summary['kdj_d'] = float(latest['kdj_d'])
+            summary['kdj_j'] = float(latest['kdj_j'])
+
+        return summary
 
 
 if __name__ == '__main__':

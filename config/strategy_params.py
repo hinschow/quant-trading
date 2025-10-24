@@ -87,6 +87,14 @@ MEAN_REVERSION_PARAMS = {
     "rsi_overbought": 75,             # RSI > 75 超买
     "rsi_neutral": 50,                # RSI 中性值
 
+    # KDJ 参数（震荡市场专用）
+    "kdj_fastk_period": 9,            # RSV周期（默认9）
+    "kdj_slowk_period": 3,            # K值平滑周期（默认3）
+    "kdj_slowd_period": 3,            # D值平滑周期（默认3）
+    "kdj_oversold": 20,               # KDJ < 20 超卖
+    "kdj_overbought": 80,             # KDJ > 80 超买
+    "kdj_enabled": True,              # 是否启用KDJ指标
+
     # 布林带参数
     "bb_period": 20,
     "bb_std": 2.5,                    # 2.5 倍标准差（更保守）

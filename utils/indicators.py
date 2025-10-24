@@ -112,6 +112,42 @@ def calculate_bollinger_bands(df: pd.DataFrame, period: int = 20, std_dev: float
     return upper, middle, lower
 
 
+def calculate_kdj(df: pd.DataFrame, fastk_period: int = 9, slowk_period: int = 3, slowd_period: int = 3):
+    """
+    计算 KDJ 指标（随机指标）
+
+    KDJ是在KD指标基础上的优化，J值更敏感
+    - K值：快线（Stochastic %K）
+    - D值：慢线（%K的移动平均）
+    - J值：超快线（3K - 2D），更灵敏
+
+    Args:
+        df: 数据框（需包含 high, low, close）
+        fastk_period: RSV周期，默认9
+        slowk_period: K平滑周期，默认3
+        slowd_period: D平滑周期，默认3
+
+    Returns:
+        (k, d, j) 元组
+    """
+    # 使用talib的STOCH函数计算K和D
+    k, d = talib.STOCH(
+        df['high'],
+        df['low'],
+        df['close'],
+        fastk_period=fastk_period,
+        slowk_period=slowk_period,
+        slowk_matype=1,  # EMA
+        slowd_period=slowd_period,
+        slowd_matype=1   # EMA
+    )
+
+    # 计算J值：J = 3K - 2D
+    j = 3 * k - 2 * d
+
+    return k, d, j
+
+
 def calculate_bbw(df: pd.DataFrame, period: int = 20, std_dev: float = 2.0) -> pd.Series:
     """
     计算布林带宽度 (Bollinger Band Width)
