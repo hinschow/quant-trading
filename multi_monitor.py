@@ -32,29 +32,31 @@ class MultiCoinMonitor:
         symbols: List[str],
         timeframe: str = '15m',
         exchange: str = 'binance',
-        proxy: str = None,
-        market_type: str = 'spot'
+        proxy: str = None
     ):
         """
         初始化多币种监控器
 
         Args:
-            symbols: 交易对列表
+            symbols: 交易对列表（支持现货和合约混合）
             timeframe: K线周期
             exchange: 交易所
             proxy: 代理地址
-            market_type: 市场类型，'spot' (现货) 或 'future' (合约)
         """
         self.symbols = symbols
         self.timeframe = timeframe
         self.exchange_name = exchange
         self.proxy = proxy
-        self.market_type = market_type
 
         # 每个币种的监控组件
         self.monitors = {}
         self.engines = {}
         self.streams = {}
+
+        # 每个币种的市场类型（自动检测）
+        self.symbol_markets = {}
+        for symbol in symbols:
+            self.symbol_markets[symbol] = self._detect_market_type(symbol)
 
         # 信号记录器
         self.logger = SignalLogger()
@@ -67,18 +69,37 @@ class MultiCoinMonitor:
         self.signal_counts = {symbol: 0 for symbol in symbols}
         self.start_time = datetime.now()
 
-        # 市场类型说明
-        market_name = {'spot': '现货', 'future': '合约/永续'}[market_type]
+        # 统计市场类型
+        spot_count = sum(1 for m in self.symbol_markets.values() if m == 'spot')
+        future_count = sum(1 for m in self.symbol_markets.values() if m == 'future')
 
         print(f"\n{'='*80}")
         print(f"🚀 多币种交易信号监控系统")
         print(f"{'='*80}")
         print(f"监控币种: {', '.join(symbols)}")
-        print(f"市场类型: {market_name} ({market_type})")
+        print(f"市场类型: 现货 {spot_count} 个, 合约 {future_count} 个")
         print(f"时间周期: {timeframe}")
         print(f"交易所: {exchange}")
         print(f"代理: {proxy or '无'}")
         print(f"{'='*80}\n")
+
+    @staticmethod
+    def _detect_market_type(symbol: str) -> str:
+        """
+        自动检测交易对的市场类型
+
+        Args:
+            symbol: 交易对
+
+        Returns:
+            'spot' 或 'future'
+        """
+        # 合约交易对格式：BTC/USDT:USDT（有冒号）
+        # 现货交易对格式：BTC/USDT（无冒号）
+        if ':' in symbol:
+            return 'future'
+        else:
+            return 'spot'
 
     async def start(self):
         """启动多币种监控"""
@@ -118,10 +139,14 @@ class MultiCoinMonitor:
     async def _init_symbol(self, symbol: str):
         """初始化单个币种"""
         try:
-            print(f"  {symbol}: 获取历史数据...", end='', flush=True)
+            # 获取该币种的市场类型
+            market_type = self.symbol_markets[symbol]
+            market_name = {'spot': '现货', 'future': '合约'}[market_type]
+
+            print(f"  {symbol} ({market_name}): 获取历史数据...", end='', flush=True)
 
             # 获取历史数据
-            collector = DataCollector(self.exchange_name, self.proxy, self.market_type)
+            collector = DataCollector(self.exchange_name, self.proxy, market_type)
             historical_df = collector.fetch_ohlcv(symbol, self.timeframe, limit=500)
 
             # 创建信号引擎
@@ -132,7 +157,7 @@ class MultiCoinMonitor:
             engine.on_signal_change = lambda sig: self._on_signal_change(symbol, sig)
 
             # 创建数据流
-            stream = WebSocketStream(self.exchange_name, self.proxy, self.market_type)
+            stream = WebSocketStream(self.exchange_name, self.proxy, market_type)
 
             # 保存组件
             self.engines[symbol] = engine
@@ -300,17 +325,21 @@ async def main():
   python multi_monitor.py BTC/USDT ETH/USDT -t 15m --proxy http://127.0.0.1:7890
 
   # 监控合约市场（永续合约）
-  python multi_monitor.py BTC/USDT:USDT ETH/USDT:USDT -t 15m -m future --proxy http://127.0.0.1:7890
+  python multi_monitor.py BTC/USDT:USDT ETH/USDT:USDT -t 15m --proxy http://127.0.0.1:7890
+
+  # 🎉 同时监控现货和合约（混合监控）
+  python multi_monitor.py BTC/USDT PEPE/USDT:USDT ETH/USDT SOL/USDT:USDT -t 15m --proxy http://127.0.0.1:7890
 
   # 监控只在合约市场上线的币种
-  python multi_monitor.py PEPE/USDT:USDT BONK/USDT:USDT -t 1h -m future --proxy http://127.0.0.1:7890
+  python multi_monitor.py PEPE/USDT:USDT BONK/USDT:USDT WIF/USDT:USDT -t 1h --proxy http://127.0.0.1:7890
 
   # 使用不同交易所
-  python multi_monitor.py BTC/USDT ETH/USDT -e okx -m future --proxy http://127.0.0.1:7890
+  python multi_monitor.py BTC/USDT ETH/USDT:USDT -e okx --proxy http://127.0.0.1:7890
 
 特点:
   - 📊 同时监控多个交易对
-  - 🔄 支持现货和合约市场
+  - 🔄 自动识别现货和合约市场（无需手动指定）
+  - 🎯 支持现货和合约混合监控（同一个终端）
   - 💾 自动保存所有买卖信号到文件
   - 🔔 信号变化即时提醒
   - 📈 每分钟显示所有币种状态
@@ -320,20 +349,19 @@ async def main():
   - CSV: signal_logs/signals_YYYYMMDD.csv
   - JSON: signal_logs/signals_YYYYMMDD.json
 
-注意事项:
-  - 现货交易对格式: BTC/USDT
-  - 合约交易对格式: BTC/USDT:USDT (注意有 :USDT 后缀)
+交易对格式:
+  - 现货: BTC/USDT, ETH/USDT (无冒号)
+  - 合约: BTC/USDT:USDT, PEPE/USDT:USDT (有 :USDT 后缀)
+  - 系统会自动识别，无需手动指定市场类型
         """
     )
 
-    parser.add_argument('symbols', nargs='+', help='交易对列表，如 BTC/USDT 或 BTC/USDT:USDT (合约)')
+    parser.add_argument('symbols', nargs='+',
+                       help='交易对列表，支持现货和合约混合，如: BTC/USDT ETH/USDT:USDT PEPE/USDT:USDT')
     parser.add_argument('-t', '--timeframe', default='15m',
                         help='K线周期 (1m, 5m, 15m, 1h, 4h), 默认: 15m')
     parser.add_argument('-e', '--exchange', default='binance',
                         help='交易所, 默认: binance')
-    parser.add_argument('-m', '--market', default='spot',
-                        choices=['spot', 'future'],
-                        help='市场类型: spot (现货) 或 future (合约), 默认: spot')
     parser.add_argument('--proxy', help='代理地址，如 http://127.0.0.1:7890')
 
     args = parser.parse_args()
@@ -343,8 +371,7 @@ async def main():
         symbols=args.symbols,
         timeframe=args.timeframe,
         exchange=args.exchange,
-        proxy=args.proxy,
-        market_type=args.market
+        proxy=args.proxy
     )
 
     # 启动

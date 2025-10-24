@@ -33,28 +33,28 @@ class RealtimeMonitorPro:
         symbol: str,
         timeframe: str = '15m',
         exchange: str = 'binance',
-        proxy: str = None,
-        market_type: str = 'spot'
+        proxy: str = None
     ):
         """
         初始化增强版监控器
 
         Args:
-            symbol: 交易对
+            symbol: 交易对（自动识别现货或合约）
             timeframe: K线时间周期（用于信号）
             exchange: 交易所
             proxy: 代理地址
-            market_type: 市场类型，'spot' (现货) 或 'future' (合约)
         """
         self.symbol = symbol
         self.timeframe = timeframe
         self.exchange_name = exchange
         self.proxy = proxy
-        self.market_type = market_type
+
+        # 自动检测市场类型
+        self.market_type = self._detect_market_type(symbol)
 
         # 两个 WebSocket 流
-        self.ticker_stream = WebSocketStream(exchange, proxy, market_type)  # ticker流
-        self.kline_stream = WebSocketStream(exchange, proxy, market_type)   # K线流
+        self.ticker_stream = WebSocketStream(exchange, proxy, self.market_type)  # ticker流
+        self.kline_stream = WebSocketStream(exchange, proxy, self.market_type)   # K线流
 
         # 实时信号引擎
         self.engine = RealtimeSignalEngine(symbol, timeframe)
@@ -80,15 +80,37 @@ class RealtimeMonitorPro:
         # 价格精度（动态检测）
         self.price_precision = 2  # 默认2位小数
 
+        # 市场类型说明
+        market_name = {'spot': '现货', 'future': '合约/永续'}[self.market_type]
+
         print(f"\n{'='*80}")
         print(f"🚀 增强版实时交易信号监控 (双流整合)")
         print(f"{'='*80}")
         print(f"交易对: {symbol}")
+        print(f"市场类型: {market_name}")
         print(f"💹 实时价格流: ticker (秒级更新)")
         print(f"📊 K线信号流: {timeframe} (信号计算)")
         print(f"交易所: {exchange}")
         print(f"代理: {proxy or '无'}")
         print(f"{'='*80}\n")
+
+    @staticmethod
+    def _detect_market_type(symbol: str) -> str:
+        """
+        自动检测交易对的市场类型
+
+        Args:
+            symbol: 交易对
+
+        Returns:
+            'spot' 或 'future'
+        """
+        # 合约交易对格式：BTC/USDT:USDT（有冒号）
+        # 现货交易对格式：BTC/USDT（无冒号）
+        if ':' in symbol:
+            return 'future'
+        else:
+            return 'spot'
 
     async def start(self):
         """启动双流监控"""
@@ -475,30 +497,32 @@ async def main():
   # 监听现货BTC（实时价格 + 15分钟信号）
   python realtime_monitor_pro.py BTC/USDT -t 15m --proxy http://127.0.0.1:7890
 
-  # 监听合约ETH（实时价格 + 1小时信号）
-  python realtime_monitor_pro.py ETH/USDT:USDT -t 1h -m future --proxy http://127.0.0.1:7890
+  # 监听合约ETH（实时价格 + 1小时信号）- 自动识别
+  python realtime_monitor_pro.py ETH/USDT:USDT -t 1h --proxy http://127.0.0.1:7890
 
-  # 监听只在合约市场的币种
-  python realtime_monitor_pro.py PEPE/USDT:USDT -t 15m -m future --proxy http://127.0.0.1:7890
+  # 监听只在合约市场的币种 - 自动识别
+  python realtime_monitor_pro.py PEPE/USDT:USDT -t 15m --proxy http://127.0.0.1:7890
 
 特点:
   - 💹 实时价格流（秒级更新）
   - 📊 K线信号流（准确的买卖建议）
-  - 🔄 支持现货和合约市场
+  - 🔄 自动识别现货和合约市场（无需手动指定）
   - 📈 价格趋势显示
   - 🔔 信号变化提醒
   - 📉 技术指标实时更新
+
+交易对格式:
+  - 现货: BTC/USDT (无冒号)
+  - 合约: BTC/USDT:USDT (有 :USDT 后缀)
+  - 系统会自动识别市场类型
         """
     )
 
-    parser.add_argument('symbol', help='交易对，如 BTC/USDT 或 BTC/USDT:USDT (合约)')
+    parser.add_argument('symbol', help='交易对，如 BTC/USDT (现货) 或 BTC/USDT:USDT (合约)')
     parser.add_argument('-t', '--timeframe', default='15m',
                         help='K线周期 (1m, 5m, 15m, 1h, 4h), 默认: 15m')
     parser.add_argument('-e', '--exchange', default='binance',
                         help='交易所, 默认: binance')
-    parser.add_argument('-m', '--market', default='spot',
-                        choices=['spot', 'future'],
-                        help='市场类型: spot (现货) 或 future (合约), 默认: spot')
     parser.add_argument('--proxy', help='代理地址，如 http://127.0.0.1:7890')
 
     args = parser.parse_args()
@@ -508,8 +532,7 @@ async def main():
         symbol=args.symbol,
         timeframe=args.timeframe,
         exchange=args.exchange,
-        proxy=args.proxy,
-        market_type=args.market
+        proxy=args.proxy
     )
 
     # 启动
