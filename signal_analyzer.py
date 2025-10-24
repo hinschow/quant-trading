@@ -22,9 +22,9 @@ logging.basicConfig(
 class SignalAnalyzer:
     """信号分析器"""
 
-    def __init__(self, exchange: str = 'binance'):
+    def __init__(self, exchange: str = 'binance', proxy: str = None):
         """初始化分析器"""
-        self.collector = DataCollector(exchange)
+        self.collector = DataCollector(exchange, proxy)
         self.engine = StrategyEngine()
 
     def analyze_symbol(
@@ -286,7 +286,8 @@ def main():
     parser.add_argument('-t', '--timeframe', default='1h',
                         help='时间周期 (1m, 5m, 15m, 1h, 4h, 1d), 默认: 1h')
     parser.add_argument('-e', '--exchange', default='binance',
-                        help='交易所, 默认: binance')
+                        help='交易所 (binance, okx, bybit), 默认: binance')
+    parser.add_argument('--proxy', help='代理地址，如 http://127.0.0.1:7890')
     parser.add_argument('--scan', help='扫描所有交易对，如 USDT')
     parser.add_argument('--min-strength', type=int, default=0,
                         help='最小信号强度过滤, 默认: 0')
@@ -296,7 +297,7 @@ def main():
     args = parser.parse_args()
 
     # 创建分析器
-    analyzer = SignalAnalyzer(args.exchange)
+    analyzer = SignalAnalyzer(args.exchange, args.proxy)
 
     try:
         # 扫描模式

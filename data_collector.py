@@ -16,19 +16,55 @@ logger = logging.getLogger(__name__)
 class DataCollector:
     """数据采集器 - 获取历史K线数据"""
 
-    def __init__(self, exchange_name: str = 'binance'):
+    def __init__(self, exchange_name: str = 'binance', proxy: Optional[str] = None):
         """
         初始化数据采集器
 
         Args:
             exchange_name: 交易所名称，默认 binance
+            proxy: 代理地址，如 'http://127.0.0.1:7890'
         """
         self.exchange_name = exchange_name
-        self.exchange = getattr(ccxt, exchange_name)({
+
+        config = {
             'enableRateLimit': True,
-            'options': {'defaultType': 'spot'}  # 现货市场
-        })
-        logger.info(f"✅ 初始化 {exchange_name} 数据采集器")
+            'options': {'defaultType': 'spot'},  # 现货市场
+            'timeout': 30000,  # 30秒超时
+        }
+
+        # 如果提供代理，配置代理
+        if proxy:
+            config['proxies'] = {
+                'http': proxy,
+                'https': proxy,
+            }
+            logger.info(f"🔗 使用代理: {proxy}")
+
+        # 尝试多个币安域名
+        if exchange_name == 'binance':
+            # 币安有多个备用域名
+            for i in range(1, 5):
+                try:
+                    if i == 1:
+                        self.exchange = ccxt.binance(config)
+                    else:
+                        config['hostname'] = f'api{i}.binance.com'
+                        self.exchange = ccxt.binance(config)
+
+                    # 测试连接
+                    self.exchange.load_markets()
+                    logger.info(f"✅ 初始化 {exchange_name} 数据采集器 (域名: {config.get('hostname', 'api.binance.com')})")
+                    return
+                except Exception as e:
+                    if i < 4:
+                        logger.warning(f"⚠️  连接失败，尝试备用域名...")
+                        continue
+                    else:
+                        logger.error(f"❌ 所有币安域名都无法连接，请检查网络或配置代理")
+                        raise
+        else:
+            self.exchange = getattr(ccxt, exchange_name)(config)
+            logger.info(f"✅ 初始化 {exchange_name} 数据采集器")
 
     def fetch_ohlcv(
         self,
