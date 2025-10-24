@@ -70,52 +70,77 @@ class WebSocketStream:
 
         logger.info(f"📡 开始监听 {symbol} {timeframe} K线")
 
+        # 尝试使用 WebSocket，失败则降级到轮询
+        use_websocket = False
+
         try:
             if hasattr(self.exchange, 'watch_ohlcv'):
-                # WebSocket 模式
-                while self.running:
-                    try:
-                        ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe)
+                # 测试 WebSocket 是否真的支持
+                try:
+                    test_ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe)
+                    use_websocket = True
+                    logger.info(f"✅ 使用 WebSocket 模式")
+                except Exception as ws_error:
+                    if 'not supported' in str(ws_error):
+                        logger.warning(f"⚠️  {self.exchange_name} 不支持 OHLCV WebSocket")
+                        use_websocket = False
+                    else:
+                        raise
+        except AttributeError:
+            use_websocket = False
 
-                        if ohlcv and len(ohlcv) > 0:
-                            # 最新K线
-                            latest = ohlcv[-1]
+        if use_websocket:
+            # WebSocket 模式
+            logger.info(f"📡 WebSocket 实时模式")
+            while self.running:
+                try:
+                    ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe)
+
+                    if ohlcv and len(ohlcv) > 0:
+                        # 最新K线
+                        latest = ohlcv[-1]
+                        kline = self._format_kline(latest)
+
+                        if callback:
+                            await callback(kline)
+
+                except Exception as e:
+                    logger.error(f"❌ WebSocket 错误: {e}")
+                    await asyncio.sleep(5)  # 错误后等待5秒重连
+
+        else:
+            # 轮询模式
+            interval = self._get_poll_interval(timeframe)
+            logger.info(f"📊 使用轮询模式（每 {interval} 秒更新）")
+
+            last_timestamp = 0
+
+            while self.running:
+                try:
+                    ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=1)
+
+                    if ohlcv and len(ohlcv) > 0:
+                        latest = ohlcv[-1]
+
+                        # 只在新K线时触发回调
+                        if latest[0] > last_timestamp:
+                            last_timestamp = latest[0]
                             kline = self._format_kline(latest)
 
                             if callback:
                                 await callback(kline)
+                        else:
+                            # 更新当前K线
+                            kline = self._format_kline(latest)
+                            if callback:
+                                await callback(kline)
 
-                    except Exception as e:
-                        logger.error(f"❌ WebSocket 错误: {e}")
-                        await asyncio.sleep(5)  # 错误后等待5秒重连
+                    # 根据时间周期调整轮询间隔
+                    await asyncio.sleep(interval)
 
-            else:
-                # 轮询模式（如果不支持WebSocket）
-                logger.info(f"📊 使用轮询模式（每{timeframe}更新）")
-                last_timestamp = 0
-
-                while self.running:
-                    try:
-                        ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=1)
-
-                        if ohlcv and len(ohlcv) > 0:
-                            latest = ohlcv[-1]
-
-                            # 只在新K线时触发回调
-                            if latest[0] > last_timestamp:
-                                last_timestamp = latest[0]
-                                kline = self._format_kline(latest)
-
-                                if callback:
-                                    await callback(kline)
-
-                        # 根据时间周期调整轮询间隔
-                        interval = self._get_poll_interval(timeframe)
-                        await asyncio.sleep(interval)
-
-                    except Exception as e:
-                        logger.error(f"❌ 轮询错误: {e}")
-                        await asyncio.sleep(10)
+                except Exception as e:
+                    logger.error(f"❌ 轮询错误: {e}")
+                    await asyncio.sleep(10)
 
         except Exception as e:
             logger.error(f"❌ 监听失败: {e}")
