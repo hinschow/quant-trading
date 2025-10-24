@@ -49,15 +49,15 @@ class StrategyEngine:
         logger.info("📊 开始计算技术指标...")
 
         # 趋势指标
-        df['ema_50'] = calculate_ema(df, self.trend_params['ema_short_period'])
-        df['ema_200'] = calculate_ema(df, self.trend_params['ema_long_period'])
+        df['ema_50'] = calculate_ema(df, self.trend_params['ema_fast'])
+        df['ema_200'] = calculate_ema(df, self.trend_params['ema_slow'])
 
         # MACD
         macd, signal, hist = calculate_macd(
             df,
-            self.trend_params['macd_fast_period'],
-            self.trend_params['macd_slow_period'],
-            self.trend_params['macd_signal_period']
+            self.trend_params['macd_fast'],
+            self.trend_params['macd_slow'],
+            self.trend_params['macd_signal']
         )
         df['macd'] = macd
         df['macd_signal'] = signal
@@ -76,7 +76,7 @@ class StrategyEngine:
         upper, middle, lower = calculate_bollinger_bands(
             df,
             self.mean_reversion_params['bb_period'],
-            self.mean_reversion_params['bb_std_dev']
+            self.mean_reversion_params['bb_std']
         )
         df['bb_upper'] = upper
         df['bb_middle'] = middle
@@ -109,7 +109,7 @@ class StrategyEngine:
         bbw_ma = latest['bbw_ma']
 
         adx_trend = self.market_regime_params['adx_trend_threshold']
-        adx_range = 20  # ADX < 20 表示无趋势
+        adx_range = self.market_regime_params['adx_range_threshold']
         bbw_high = self.market_regime_params['bbw_high_threshold']
         bbw_squeeze = self.market_regime_params['bbw_squeeze_threshold']
 
@@ -118,7 +118,7 @@ class StrategyEngine:
             return 'STRONG_TREND'
 
         # 趋势 + 正常波动
-        elif adx > 25 and bbw > bbw_ma:
+        elif adx > self.market_regime_params['adx_weak_trend_threshold'] and bbw > bbw_ma:
             return 'TREND'
 
         # 震荡 + 低波动
@@ -162,7 +162,7 @@ class StrategyEngine:
         macd_cross_down = prev['macd'] >= prev['macd_signal'] and latest['macd'] < latest['macd_signal']
 
         # ADX趋势强度
-        adx_strong = latest['adx'] > self.trend_params['adx_trend_threshold']
+        adx_strong = latest['adx'] > self.trend_params['adx_threshold']
 
         # 买入信号
         if ema_cross_up or (latest['ema_50'] > latest['ema_200'] and macd_cross_up and adx_strong):
