@@ -59,18 +59,21 @@ def calculate_macd(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int
     return macd, signal_line, hist
 
 
-def calculate_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+def calculate_adx(df: pd.DataFrame, period: int = 14):
     """
-    计算平均趋向指数 (ADX)
+    计算平均趋向指数 (ADX) 及方向指标
 
     Args:
         df: 数据框（需包含 high, low, close）
         period: 周期，默认 14
 
     Returns:
-        ADX 序列
+        (adx, plus_di, minus_di) 元组
     """
-    return talib.ADX(df['high'], df['low'], df['close'], timeperiod=period)
+    adx = talib.ADX(df['high'], df['low'], df['close'], timeperiod=period)
+    plus_di = talib.PLUS_DI(df['high'], df['low'], df['close'], timeperiod=period)
+    minus_di = talib.MINUS_DI(df['high'], df['low'], df['close'], timeperiod=period)
+    return adx, plus_di, minus_di
 
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
@@ -198,7 +201,10 @@ def calculate_all_indicators(df: pd.DataFrame, params: dict = None) -> pd.DataFr
     result['macd_hist'] = hist
 
     # ADX
-    result['adx'] = calculate_adx(df, params.get('adx_period', 14))
+    adx, plus_di, minus_di = calculate_adx(df, params.get('adx_period', 14))
+    result['adx'] = adx
+    result['plus_di'] = plus_di
+    result['minus_di'] = minus_di
 
     # ATR
     result['atr'] = calculate_atr(df, params.get('atr_period', 14))
