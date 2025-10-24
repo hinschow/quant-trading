@@ -169,12 +169,13 @@ class StrategyEngine:
         macd_bullish = latest['macd'] > latest['macd_signal']
         macd_bearish = latest['macd'] < latest['macd_signal']
 
-        # RSI 状态
+        # RSI 状态（放宽上限，适应持续上涨）
         rsi = latest['rsi']
-        rsi_bullish = 40 < rsi < 70  # RSI 在健康的多头区间
-        rsi_bearish = 30 < rsi < 60  # RSI 在健康的空头区间
+        rsi_bullish = 40 < rsi < 80  # 扩大到80，允许强趋势中的高RSI
+        rsi_bearish = 20 < rsi < 60  # RSI 在健康的空头区间
+        rsi_very_strong = rsi > 70  # 非常强劲的多头
 
-        # 买入信号（放宽条件）
+        # 买入信号（增强持续上涨检测）
         buy_strength = 0
         buy_reasons = []
 
@@ -185,6 +186,18 @@ class StrategyEngine:
             buy_strength += 20
             buy_reasons.append('处于上升趋势')
 
+            # 检测强劲上涨：价格远高于EMA200
+            price_above_ema200_pct = (latest['close'] - latest['ema_200']) / latest['ema_200'] * 100
+            if price_above_ema200_pct > 5:  # 价格比EMA200高5%以上
+                buy_strength += 10
+                buy_reasons.append(f'强劲上涨(价格高于EMA200 {price_above_ema200_pct:.1f}%)')
+
+            # 检测EMA向上发散（趋势加速）
+            ema_spread_pct = (latest['ema_50'] - latest['ema_200']) / latest['ema_200'] * 100
+            if ema_spread_pct > 3:  # EMA50比EMA200高3%以上
+                buy_strength += 10
+                buy_reasons.append('EMA向上发散(趋势加速)')
+
         if macd_cross_up:
             buy_strength += 40
             buy_reasons.append('MACD金叉')
@@ -192,14 +205,23 @@ class StrategyEngine:
             buy_strength += 15
             buy_reasons.append('MACD多头排列')
 
+        # RSI判断（放宽限制）
         if rsi_bullish:
             buy_strength += 15
             buy_reasons.append(f'RSI健康({rsi:.1f})')
+        elif rsi_very_strong and in_uptrend:  # 强趋势中允许高RSI
+            buy_strength += 10
+            buy_reasons.append(f'RSI强劲({rsi:.1f}，强势上涨)')
 
         # ADX 确认（可选）
         if latest['adx'] > 25:
             buy_strength += 10
             buy_reasons.append(f'趋势明确(ADX:{latest["adx"]:.1f})')
+
+        # 强趋势额外加分
+        if latest['adx'] > 40:
+            buy_strength += 5
+            buy_reasons.append(f'极强趋势(ADX:{latest["adx"]:.1f})')
 
         # 如果信号强度 > 30，发出买入信号
         if buy_strength >= 30:
@@ -207,7 +229,7 @@ class StrategyEngine:
             signal['strength'] = min(buy_strength, 100)
             signal['reasons'] = buy_reasons
 
-        # 卖出信号（放宽条件）
+        # 卖出信号（增强持续下跌检测）
         else:
             sell_strength = 0
             sell_reasons = []
@@ -219,6 +241,18 @@ class StrategyEngine:
                 sell_strength += 20
                 sell_reasons.append('处于下降趋势')
 
+                # 检测强劲下跌：价格远低于EMA200
+                price_below_ema200_pct = (latest['ema_200'] - latest['close']) / latest['ema_200'] * 100
+                if price_below_ema200_pct > 5:  # 价格比EMA200低5%以上
+                    sell_strength += 10
+                    sell_reasons.append(f'强劲下跌(价格低于EMA200 {price_below_ema200_pct:.1f}%)')
+
+                # 检测EMA向下发散
+                ema_spread_pct = (latest['ema_200'] - latest['ema_50']) / latest['ema_200'] * 100
+                if ema_spread_pct > 3:
+                    sell_strength += 10
+                    sell_reasons.append('EMA向下发散(趋势加速)')
+
             if macd_cross_down:
                 sell_strength += 40
                 sell_reasons.append('MACD死叉')
@@ -229,10 +263,18 @@ class StrategyEngine:
             if rsi_bearish:
                 sell_strength += 15
                 sell_reasons.append(f'RSI偏弱({rsi:.1f})')
+            elif rsi < 20 and in_downtrend:  # 极度超卖
+                sell_strength += 10
+                sell_reasons.append(f'RSI极弱({rsi:.1f}，强势下跌)')
 
             if latest['adx'] > 25:
                 sell_strength += 10
                 sell_reasons.append(f'趋势明确(ADX:{latest["adx"]:.1f})')
+
+            # 强趋势额外加分
+            if latest['adx'] > 40:
+                sell_strength += 5
+                sell_reasons.append(f'极强趋势(ADX:{latest["adx"]:.1f})')
 
             # 如果信号强度 > 30，发出卖出信号
             if sell_strength >= 30:
