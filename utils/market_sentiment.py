@@ -5,6 +5,7 @@
 
 import ccxt
 import logging
+import time
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
 
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class MarketSentiment:
-    """市场情绪数据获取器"""
+    """市场情绪数据获取器（带智能缓存）"""
 
     def __init__(self, exchange_name: str = 'binance', proxy: Optional[str] = None):
         """
@@ -40,11 +41,19 @@ class MarketSentiment:
         exchange_class = getattr(ccxt, exchange_name)
         self.exchange = exchange_class(config)
 
-        logger.info(f"✅ 市场情绪模块初始化完成: {exchange_name}")
+        # 缓存机制（减少API调用）
+        self.funding_cache = {}  # {symbol: (rate, timestamp)}
+        self.oi_cache = {}       # {symbol: (oi_data, timestamp)}
+
+        # 缓存TTL（秒）
+        self.funding_ttl = 8 * 3600  # 8小时（资金费率每8小时更新一次）
+        self.oi_ttl = 5 * 60         # 5分钟（OI数据缓存5分钟）
+
+        logger.info(f"✅ 市场情绪模块初始化完成: {exchange_name} (已启用智能缓存)")
 
     def get_funding_rate(self, symbol: str) -> Optional[float]:
         """
-        获取当前资金费率
+        获取当前资金费率（带缓存优化）
 
         资金费率解读：
         - > 0.1%: 多头极度FOMO，顶部信号
@@ -64,12 +73,26 @@ class MarketSentiment:
                 logger.debug(f"⚠️  {symbol} 是现货市场，无资金费率")
                 return None
 
-            # 获取资金费率
+            # 检查缓存（资金费率每8小时更新一次）
+            if symbol in self.funding_cache:
+                rate, timestamp = self.funding_cache[symbol]
+                age = time.time() - timestamp
+
+                if age < self.funding_ttl:
+                    logger.debug(f"📦 使用缓存的资金费率: {symbol} ({rate:.4f}%, 缓存时长: {age/60:.1f}分钟)")
+                    return rate
+
+            # 缓存过期或不存在，重新获取
+            logger.debug(f"🔄 从API更新资金费率: {symbol}")
             funding_rate = self.exchange.fetch_funding_rate(symbol)
 
             if funding_rate and 'fundingRate' in funding_rate:
                 rate = float(funding_rate['fundingRate']) * 100  # 转为百分比
-                logger.debug(f"📊 {symbol} 资金费率: {rate:.4f}%")
+
+                # 更新缓存
+                self.funding_cache[symbol] = (rate, time.time())
+
+                logger.debug(f"📊 {symbol} 资金费率: {rate:.4f}% (已缓存)")
                 return rate
             else:
                 logger.warning(f"⚠️  无法获取 {symbol} 资金费率")
@@ -81,7 +104,7 @@ class MarketSentiment:
 
     def get_open_interest(self, symbol: str) -> Optional[Dict]:
         """
-        获取持仓量（OI）及变化
+        获取持仓量（OI）及变化（带缓存优化）
 
         持仓量解读：
         - OI增加 + 价格上涨 = 真突破（新多头进场）
@@ -106,6 +129,18 @@ class MarketSentiment:
                 logger.debug(f"⚠️  {symbol} 是现货市场，无持仓量")
                 return None
 
+            # 检查缓存（OI数据缓存5分钟）
+            if symbol in self.oi_cache:
+                oi_data, timestamp = self.oi_cache[symbol]
+                age = time.time() - timestamp
+
+                if age < self.oi_ttl:
+                    logger.debug(f"📦 使用缓存的OI数据: {symbol} (缓存时长: {age:.0f}秒)")
+                    return oi_data
+
+            # 缓存过期或不存在，重新获取
+            logger.debug(f"🔄 从API更新持仓量: {symbol}")
+
             # 获取当前持仓量
             current_oi = self.exchange.fetch_open_interest(symbol)
 
@@ -127,7 +162,10 @@ class MarketSentiment:
                 'oi_change_24h': oi_change_24h,
             }
 
-            logger.debug(f"📊 {symbol} OI: {oi_amount:.0f}, 24h变化: {oi_change_24h:.1f}%")
+            # 更新缓存
+            self.oi_cache[symbol] = (result, time.time())
+
+            logger.debug(f"📊 {symbol} OI: {oi_amount:.0f}, 24h变化: {oi_change_24h:.1f}% (已缓存)")
 
             return result
 
@@ -277,6 +315,74 @@ class MarketSentiment:
             return 'DECREASE'  # 减少
         else:
             return 'STABLE'  # 稳定
+
+    def get_cache_stats(self) -> Dict:
+        """
+        获取缓存统计信息
+
+        Returns:
+            缓存统计字典
+        """
+        current_time = time.time()
+
+        # 统计资金费率缓存
+        funding_valid = 0
+        funding_expired = 0
+        for symbol, (rate, timestamp) in self.funding_cache.items():
+            if current_time - timestamp < self.funding_ttl:
+                funding_valid += 1
+            else:
+                funding_expired += 1
+
+        # 统计OI缓存
+        oi_valid = 0
+        oi_expired = 0
+        for symbol, (data, timestamp) in self.oi_cache.items():
+            if current_time - timestamp < self.oi_ttl:
+                oi_valid += 1
+            else:
+                oi_expired += 1
+
+        return {
+            'funding_rate': {
+                'valid': funding_valid,
+                'expired': funding_expired,
+                'total': funding_valid + funding_expired,
+                'ttl_hours': self.funding_ttl / 3600,
+            },
+            'open_interest': {
+                'valid': oi_valid,
+                'expired': oi_expired,
+                'total': oi_valid + oi_expired,
+                'ttl_minutes': self.oi_ttl / 60,
+            }
+        }
+
+    def clear_cache(self, symbol: Optional[str] = None):
+        """
+        清除缓存
+
+        Args:
+            symbol: 如果指定，只清除该交易对的缓存；否则清除全部
+        """
+        if symbol:
+            # 清除指定交易对的缓存
+            if symbol in self.funding_cache:
+                del self.funding_cache[symbol]
+                logger.info(f"🗑️  已清除 {symbol} 的资金费率缓存")
+
+            if symbol in self.oi_cache:
+                del self.oi_cache[symbol]
+                logger.info(f"🗑️  已清除 {symbol} 的OI缓存")
+        else:
+            # 清除所有缓存
+            funding_count = len(self.funding_cache)
+            oi_count = len(self.oi_cache)
+
+            self.funding_cache.clear()
+            self.oi_cache.clear()
+
+            logger.info(f"🗑️  已清除全部缓存 (资金费率: {funding_count}, OI: {oi_count})")
 
 
 # 便捷函数
