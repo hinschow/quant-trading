@@ -16,6 +16,7 @@ import logging
 from websocket_stream import WebSocketStream
 from realtime_engine import RealtimeSignalEngine
 from data_collector import DataCollector
+from utils.signal_storage import save_signal  # 数据持久化
 
 # 配置日志
 logging.basicConfig(
@@ -270,6 +271,9 @@ class RealtimeMonitorPro:
             signal: 新信号
         """
         self.signal_changes += 1
+
+        # 保存信号到数据库（持久化存储）
+        save_signal(signal, self.symbol, self.timeframe)
 
         print(f"\n\n{'='*80}")
         print(f"🔔 交易信号变化！ ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")

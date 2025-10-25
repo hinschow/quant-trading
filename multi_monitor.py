@@ -15,6 +15,7 @@ from websocket_stream import WebSocketStream
 from realtime_engine import RealtimeSignalEngine
 from data_collector import DataCollector
 from utils.signal_logger import SignalLogger
+from utils.signal_storage import save_signal  # 数据持久化
 
 # 配置日志
 logging.basicConfig(
@@ -254,9 +255,12 @@ class MultiCoinMonitor:
             symbol: 交易对
             signal: 新信号
         """
-        # 记录信号
+        # 记录信号（日志文件）
         self.logger.log_signal(symbol, self.timeframe, signal, self.exchange_name)
         self.signal_counts[symbol] += 1
+
+        # 保存信号到数据库（持久化存储）
+        save_signal(signal, symbol, self.timeframe)
 
         # 显示信号提醒
         self._display_signal_alert(symbol, signal)
