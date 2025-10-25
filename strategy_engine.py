@@ -14,14 +14,19 @@ from utils.indicators import (
     calculate_bollinger_bands,
     calculate_bbw,
     calculate_atr,
-    calculate_kdj
+    calculate_kdj,
+    calculate_obv,
+    calculate_vwap
 )
 from config.strategy_params import (
     TREND_FOLLOWING_PARAMS,
     MEAN_REVERSION_PARAMS,
     MARKET_REGIME_PARAMS,
-    MARKET_REGIME_STRATEGY
+    MARKET_REGIME_STRATEGY,
+    VOLUME_PARAMS,
+    SENTIMENT_PARAMS
 )
+from utils.market_sentiment import MarketSentiment
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,11 +35,28 @@ logger = logging.getLogger(__name__)
 class StrategyEngine:
     """策略引擎 - 负责市场分析和信号生成"""
 
-    def __init__(self):
-        """初始化策略引擎"""
+    def __init__(self, exchange: str = 'binance', proxy: Optional[str] = None):
+        """
+        初始化策略引擎
+
+        Args:
+            exchange: 交易所名称
+            proxy: 代理地址
+        """
         self.market_regime_params = MARKET_REGIME_PARAMS
         self.trend_params = TREND_FOLLOWING_PARAMS
         self.mean_reversion_params = MEAN_REVERSION_PARAMS
+        self.volume_params = VOLUME_PARAMS
+        self.sentiment_params = SENTIMENT_PARAMS
+
+        # 初始化市场情绪模块（用于获取资金费率和OI）
+        try:
+            self.sentiment = MarketSentiment(exchange, proxy)
+            logger.info("✅ 市场情绪模块初始化完成")
+        except Exception as e:
+            logger.warning(f"⚠️  市场情绪模块初始化失败: {e}，情绪指标将不可用")
+            self.sentiment = None
+
         logger.info("✅ 策略引擎初始化完成")
 
     def calculate_all_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -101,6 +123,15 @@ class StrategyEngine:
             df['kdj_k'] = kdj_k
             df['kdj_d'] = kdj_d
             df['kdj_j'] = kdj_j
+
+        # OBV 指标（量价分析）
+        if self.volume_params.get('obv_enabled', True):
+            df['obv'] = calculate_obv(df)
+            df['obv_ma'] = df['obv'].rolling(self.volume_params['obv_ma_period']).mean()
+
+        # VWAP 指标（成交量加权平均价）
+        if self.volume_params.get('vwap_enabled', True):
+            df['vwap'] = calculate_vwap(df)
 
         logger.info("✅ 技术指标计算完成")
         return df
@@ -225,6 +256,25 @@ class StrategyEngine:
         elif rsi_very_strong and in_uptrend:  # 强趋势中允许高RSI
             buy_strength += 10
             buy_reasons.append(f'RSI强劲({rsi:.1f}，强势上涨)')
+
+        # OBV量价分析（如果启用）
+        if self.volume_params.get('obv_enabled') and 'obv' in latest:
+            obv_rising = latest['obv'] > latest['obv_ma'] if 'obv_ma' in latest else False
+
+            # OBV上升确认趋势
+            if in_uptrend and obv_rising:
+                buy_strength += 15
+                buy_reasons.append('成交量确认(OBV上升)')
+
+            # 量价背离预警
+            if len(df) >= 20:
+                # 检查价格和OBV是否都创了近期新高
+                price_new_high = latest['close'] >= df['close'].tail(20).max() * 0.99
+                obv_new_high = latest['obv'] >= df['obv'].tail(20).max() * 0.99
+
+                if price_new_high and not obv_new_high:
+                    buy_strength -= 20
+                    buy_reasons.append('⚠️ 量价背离(假突破风险)')
 
         # ADX 确认（可选）
         if latest['adx'] > 25:
@@ -412,12 +462,13 @@ class StrategyEngine:
 
         return signal
 
-    def generate_signal(self, df: pd.DataFrame) -> Dict:
+    def generate_signal(self, df: pd.DataFrame, symbol: Optional[str] = None) -> Dict:
         """
         生成综合交易信号
 
         Args:
             df: OHLCV数据
+            symbol: 交易对（用于获取情绪数据）
 
         Returns:
             完整的交易信号
@@ -457,6 +508,10 @@ class StrategyEngine:
         # 添加市场状态信息
         signal['market_regime'] = market_regime
         signal['market_data'] = self._get_market_summary(df)
+
+        # 整合情绪指标（资金费率和OI）调整信号强度
+        if symbol and self.sentiment:
+            signal = self._apply_sentiment_adjustment(signal, symbol)
 
         # 添加具体的交易价格（买入价、止盈价、止损价）
         signal['trading_plan'] = self._calculate_trading_plan(df, signal, market_regime)
@@ -549,7 +604,136 @@ class StrategyEngine:
             summary['kdj_d'] = float(latest['kdj_d'])
             summary['kdj_j'] = float(latest['kdj_j'])
 
+        # 添加OBV数据（如果有）
+        if 'obv' in latest and not pd.isna(latest['obv']):
+            summary['obv'] = float(latest['obv'])
+
         return summary
+
+    def _apply_sentiment_adjustment(self, signal: Dict, symbol: str) -> Dict:
+        """
+        基于市场情绪调整信号强度
+
+        整合资金费率和持仓量（OI）数据
+
+        Args:
+            signal: 原始信号
+            symbol: 交易对
+
+        Returns:
+            调整后的信号
+        """
+        try:
+            # 获取资金费率
+            funding_rate = None
+            if self.sentiment_params.get('funding_rate_enabled'):
+                funding_rate = self.sentiment.get_funding_rate(symbol)
+
+            # 获取持仓量
+            oi_data = None
+            if self.sentiment_params.get('open_interest_enabled'):
+                oi_data = self.sentiment.get_open_interest(symbol)
+
+            # 保存情绪数据到signal中
+            signal['sentiment'] = {}
+
+            # 调整买入信号
+            if signal['action'] == 'BUY':
+                adjustment = 0
+                sentiment_reasons = []
+
+                # 资金费率调整
+                if funding_rate is not None:
+                    signal['sentiment']['funding_rate'] = funding_rate
+
+                    # 极度负值（极度看空） → 底部信号，增强买入
+                    if funding_rate < self.sentiment_params['funding_rate_extreme_short']:
+                        adjustment += 15
+                        sentiment_reasons.append(f'资金费率极度负({funding_rate:.4f}%，底部信号)')
+
+                    # 偏空 → 适度增强买入
+                    elif funding_rate < self.sentiment_params['funding_rate_bearish']:
+                        adjustment += 10
+                        sentiment_reasons.append(f'资金费率偏空({funding_rate:.4f}%)')
+
+                    # 极度正值（极度看多） → 顶部预警，减弱买入
+                    elif funding_rate > self.sentiment_params['funding_rate_extreme_long']:
+                        adjustment -= 20
+                        sentiment_reasons.append(f'⚠️ 资金费率过高({funding_rate:.4f}%，顶部风险)')
+
+                # 持仓量调整
+                if oi_data and oi_data.get('oi_change_24h') is not None:
+                    oi_change = oi_data['oi_change_24h']
+                    signal['sentiment']['oi_change_24h'] = oi_change
+
+                    # OI强增加 → 真突破，新资金进场
+                    if oi_change > self.sentiment_params['oi_strong_increase']:
+                        adjustment += 20
+                        sentiment_reasons.append(f'OI强增({oi_change:.1f}%，真突破)')
+
+                    # OI适度增加
+                    elif oi_change > self.sentiment_params['oi_increase_threshold']:
+                        adjustment += 10
+                        sentiment_reasons.append(f'OI增加({oi_change:.1f}%)')
+
+                    # OI减少 → 假突破预警
+                    elif oi_change < self.sentiment_params['oi_decrease_threshold']:
+                        adjustment -= 15
+                        sentiment_reasons.append(f'⚠️ OI下降({oi_change:.1f}%，假突破风险)')
+
+                # 应用调整
+                if adjustment != 0:
+                    signal['strength'] = min(max(signal['strength'] + adjustment, 0), 100)
+                    signal['reasons'].extend(sentiment_reasons)
+
+            # 调整卖出信号
+            elif signal['action'] == 'SELL':
+                adjustment = 0
+                sentiment_reasons = []
+
+                # 资金费率调整
+                if funding_rate is not None:
+                    signal['sentiment']['funding_rate'] = funding_rate
+
+                    # 极度正值（极度看多） → 顶部信号，增强卖出
+                    if funding_rate > self.sentiment_params['funding_rate_extreme_long']:
+                        adjustment += 15
+                        sentiment_reasons.append(f'资金费率过高({funding_rate:.4f}%，顶部信号)')
+
+                    # 偏多 → 适度增强卖出
+                    elif funding_rate > self.sentiment_params['funding_rate_bullish']:
+                        adjustment += 10
+                        sentiment_reasons.append(f'资金费率偏高({funding_rate:.4f}%)')
+
+                    # 极度负值 → 底部预警，减弱卖出
+                    elif funding_rate < self.sentiment_params['funding_rate_extreme_short']:
+                        adjustment -= 20
+                        sentiment_reasons.append(f'⚠️ 资金费率极度负({funding_rate:.4f}%，底部风险)')
+
+                # 持仓量调整
+                if oi_data and oi_data.get('oi_change_24h') is not None:
+                    oi_change = oi_data['oi_change_24h']
+                    signal['sentiment']['oi_change_24h'] = oi_change
+
+                    # OI强减少 → 真下跌
+                    if oi_change < self.sentiment_params['oi_strong_decrease']:
+                        adjustment += 10
+                        sentiment_reasons.append(f'OI强降({oi_change:.1f}%)')
+
+                    # OI增加在价格下跌时 → 新空头进场
+                    elif oi_change > self.sentiment_params['oi_increase_threshold']:
+                        adjustment += 15
+                        sentiment_reasons.append(f'OI增加({oi_change:.1f}%，新空头)')
+
+                # 应用调整
+                if adjustment != 0:
+                    signal['strength'] = min(max(signal['strength'] + adjustment, 0), 100)
+                    signal['reasons'].extend(sentiment_reasons)
+
+        except Exception as e:
+            logger.warning(f"⚠️  情绪指标调整失败: {e}")
+
+        return signal
 
 
 if __name__ == '__main__':

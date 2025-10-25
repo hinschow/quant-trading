@@ -172,6 +172,40 @@ EXECUTION_PARAMS = {
     "order_timeout": 30,              # 订单 30 秒未成交则撤单
 }
 
+# ==================== 量价分析参数 ====================
+VOLUME_PARAMS = {
+    # OBV 参数
+    "obv_enabled": True,              # 是否启用OBV
+    "obv_ma_period": 20,              # OBV移动平均周期
+    "obv_divergence_threshold": 5,    # 量价背离阈值（%）
+
+    # VWAP 参数
+    "vwap_enabled": True,             # 是否启用VWAP
+    "vwap_deviation_threshold": 0.02, # VWAP偏离阈值（2%）
+}
+
+# ==================== 市场情绪参数 ====================
+SENTIMENT_PARAMS = {
+    # 资金费率参数
+    "funding_rate_enabled": True,     # 是否启用资金费率
+    "funding_rate_extreme_long": 0.1, # 极度看多阈值（0.1%）
+    "funding_rate_bullish": 0.05,     # 偏多阈值（0.05%）
+    "funding_rate_extreme_short": -0.05,  # 极度看空阈值（-0.05%）
+    "funding_rate_bearish": -0.02,    # 偏空阈值（-0.02%）
+
+    # 持仓量（OI）参数
+    "open_interest_enabled": True,    # 是否启用持仓量
+    "oi_increase_threshold": 10,      # OI增加阈值（10%）
+    "oi_decrease_threshold": -5,      # OI减少阈值（-5%）
+    "oi_strong_increase": 15,         # OI强增加阈值（15%）
+    "oi_strong_decrease": -15,        # OI强减少阈值（-15%）
+
+    # 多空比参数
+    "long_short_ratio_enabled": False,  # 暂不启用（需要专门API）
+    "long_ratio_extreme": 0.75,       # 极度看多（75%以上账户做多）
+    "short_ratio_extreme": 0.25,      # 极度看空（25%以下账户做多）
+}
+
 # ==================== 参数优化范围 ====================
 OPTIMIZATION_RANGES = {
     "trend_following": {

@@ -148,6 +148,52 @@ def calculate_kdj(df: pd.DataFrame, fastk_period: int = 9, slowk_period: int = 3
     return k, d, j
 
 
+def calculate_obv(df: pd.DataFrame) -> pd.Series:
+    """
+    计算 OBV (On-Balance Volume) 指标
+
+    OBV是量价分析的核心指标：
+    - 价格上涨 → OBV += 成交量
+    - 价格下跌 → OBV -= 成交量
+    - OBV创新高/新低 → 确认趋势
+    - 量价背离 → 预警假突破
+
+    Args:
+        df: 数据框（需包含 close, volume）
+
+    Returns:
+        OBV 序列
+    """
+    return talib.OBV(df['close'], df['volume'])
+
+
+def calculate_vwap(df: pd.DataFrame) -> pd.Series:
+    """
+    计算 VWAP (Volume Weighted Average Price)
+
+    VWAP是机构交易员常用基准：
+    - 价格 > VWAP → 强势
+    - 价格 < VWAP → 弱势
+    - 回踩VWAP → 经典买点
+
+    Args:
+        df: 数据框（需包含 high, low, close, volume）
+
+    Returns:
+        VWAP 序列
+    """
+    # 计算典型价格 (Typical Price)
+    typical_price = (df['high'] + df['low'] + df['close']) / 3
+
+    # VWAP = Σ(典型价格 × 成交量) / Σ成交量
+    cumulative_tp_volume = (typical_price * df['volume']).cumsum()
+    cumulative_volume = df['volume'].cumsum()
+
+    vwap = cumulative_tp_volume / cumulative_volume
+
+    return vwap
+
+
 def calculate_bbw(df: pd.DataFrame, period: int = 20, std_dev: float = 2.0) -> pd.Series:
     """
     计算布林带宽度 (Bollinger Band Width)
