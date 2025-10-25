@@ -16,6 +16,7 @@ from realtime_engine import RealtimeSignalEngine
 from data_collector import DataCollector
 from utils.signal_logger import SignalLogger
 from utils.signal_storage import save_signal  # 数据持久化
+from utils.exchange_info import get_exchange_info  # 交易对信息（价格精度）
 
 # 配置日志
 logging.basicConfig(
@@ -62,6 +63,9 @@ class MultiCoinMonitor:
         # 信号记录器
         self.logger = SignalLogger()
 
+        # 交易所信息（获取价格精度等）
+        self.exchange_info = get_exchange_info(exchange, proxy)
+
         # 最新价格
         self.latest_prices = {}
         self.latest_signals = {}
@@ -101,59 +105,6 @@ class MultiCoinMonitor:
             return 'future'
         else:
             return 'spot'
-
-    @staticmethod
-    def _detect_price_precision(price: float) -> int:
-        """
-        动态检测价格精度
-
-        Args:
-            price: 价格
-
-        Returns:
-            建议的小数位数
-        """
-        if price >= 1000:
-            return 2  # $10,000.00
-        elif price >= 100:
-            return 2  # $100.00
-        elif price >= 10:
-            return 3  # $10.000
-        elif price >= 1:
-            return 4  # $1.0000
-        elif price >= 0.1:
-            return 4  # $0.1000
-        elif price >= 0.01:
-            return 4  # $0.0100
-        elif price >= 0.001:
-            return 5  # $0.00100
-        elif price >= 0.0001:
-            return 6  # $0.000100
-        elif price >= 0.00001:
-            return 7  # $0.0000100
-        else:
-            return 8  # $0.00000100
-
-    @staticmethod
-    def _format_price(price: float, precision: int = None) -> str:
-        """
-        格式化价格显示
-
-        Args:
-            price: 价格
-            precision: 指定精度（None则自动检测）
-
-        Returns:
-            格式化后的价格字符串
-        """
-        if precision is None:
-            precision = MultiCoinMonitor._detect_price_precision(price)
-
-        # 使用千分位分隔符
-        if price >= 1000:
-            return f"{price:,.{precision}f}"
-        else:
-            return f"{price:.{precision}f}"
 
     async def start(self):
         """启动多币种监控"""
@@ -288,13 +239,13 @@ class MultiCoinMonitor:
 
             print(f"\n📋 交易计划:")
             if action == 'BUY':
-                print(f"  🟢 买入: ${self._format_price(entry)}")
-                print(f"  🎯 止盈: ${self._format_price(tp)} (+{trading_plan['take_profit_pct']:.1f}%)")
-                print(f"  🛑 止损: ${self._format_price(sl)} (-{trading_plan['stop_loss_pct']:.1f}%)")
+                print(f"  🟢 买入: ${self.exchange_info.format_price(symbol, entry)}")
+                print(f"  🎯 止盈: ${self.exchange_info.format_price(symbol, tp)} (+{trading_plan['take_profit_pct']:.1f}%)")
+                print(f"  🛑 止损: ${self.exchange_info.format_price(symbol, sl)} (-{trading_plan['stop_loss_pct']:.1f}%)")
             else:
-                print(f"  🔴 卖出: ${self._format_price(entry)}")
-                print(f"  🎯 止盈: ${self._format_price(tp)}")
-                print(f"  🛑 止损: ${self._format_price(sl)}")
+                print(f"  🔴 卖出: ${self.exchange_info.format_price(symbol, entry)}")
+                print(f"  🎯 止盈: ${self.exchange_info.format_price(symbol, tp)}")
+                print(f"  🛑 止损: ${self.exchange_info.format_price(symbol, sl)}")
 
         if signal.get('reasons'):
             print(f"\n理由:")
@@ -333,8 +284,8 @@ class MultiCoinMonitor:
                 'NEUTRAL': '😐'
             }.get(regime, '📊')
 
-            # 使用动态精度格式化价格
-            price_str = self._format_price(price)
+            # 使用真实精度格式化价格（从Binance API获取）
+            price_str = self.exchange_info.format_price(symbol, price)
 
             print(f"{symbol:20} | ${price_str:>12} | {regime_emoji} {regime:12} | {action_icon} {action:4} | 强度: {strength:3}/100")
 
