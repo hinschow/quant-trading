@@ -89,20 +89,28 @@ def main():
         status = "✅ 成功" if success else "❌ 失败"
         print(f"  {symbol:<15} {status}")
 
-    # 生成的文件
+    # 移动文件到 backtest_results/latest
     print()
-    print("生成的文件:")
+    print("整理结果文件...")
+
+    # 创建目录
+    os.makedirs('backtest_results/latest', exist_ok=True)
+
+    moved_files = []
     for symbol in symbols:
         filename = f"backtest_trades_{symbol.replace('/', '_')}_{timeframe}.csv"
         if os.path.exists(filename):
-            size = os.path.getsize(filename)
-            print(f"  ✓ {filename} ({size} bytes)")
+            dest = f"backtest_results/latest/{filename}"
+            os.rename(filename, dest)
+            size = os.path.getsize(dest)
+            moved_files.append((dest, size))
+            print(f"  ✓ 已移动: {dest} ({size} bytes)")
 
     print()
     print("下一步:")
-    print("  1. 分析结果: python3 analyze_backtest.py")
-    print("  2. 对比优化: python3 compare_results.py _v4")
-    print("  3. 提交结果: git add backtest_trades_*.csv && git commit && git push")
+    print("  1. 分析结果: python3 analyze_backtest_v2.py")
+    print("  2. 查看结果: ls -lh backtest_results/latest/")
+    print("  3. 如需保存版本: cp -r backtest_results/latest backtest_results/v4_optimized")
     print()
 
 if __name__ == '__main__':
