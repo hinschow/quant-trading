@@ -69,11 +69,11 @@ TREND_FOLLOWING_PARAMS = {
     "bb_period": 20,
     "bb_std": 2.0,
 
-    # 止盈止损
-    "stop_loss_pct": 0.015,           # 1.5% 止损
-    "take_profit_pct": 0.03,          # 3% 止盈
-    "trailing_stop_trigger": 0.02,    # 盈利达到 2% 启动移动止损
-    "trailing_stop_pct": 0.0,         # 移动到成本价（保本）
+    # 止盈止损（优化后：放宽止损，避免震荡市频繁止损）
+    "stop_loss_pct": 0.025,           # 2.5% 止损（原1.5%太紧）
+    "take_profit_pct": 0.05,          # 5% 止盈（提高盈亏比）
+    "trailing_stop_trigger": 0.03,    # 盈利达到 3% 启动移动止损
+    "trailing_stop_pct": 0.01,        # 移动止损保留1%利润
 
     # 时间止损
     "max_holding_hours": 72,          # 最长持仓 72 小时

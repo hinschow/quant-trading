@@ -273,7 +273,7 @@ class StrategyEngine:
                 obv_new_high = latest['obv'] >= df['obv'].tail(20).max() * 0.99
 
                 if price_new_high and not obv_new_high:
-                    buy_strength -= 20
+                    buy_strength -= 30  # 从-20改为-30，更严格过滤假突破
                     buy_reasons.append('⚠️ 量价背离(假突破风险)')
 
         # ADX 确认（可选）
@@ -286,8 +286,8 @@ class StrategyEngine:
             buy_strength += 5
             buy_reasons.append(f'极强趋势(ADX:{latest["adx"]:.1f})')
 
-        # 如果信号强度 > 30，发出买入信号
-        if buy_strength >= 30:
+        # 如果信号强度 > 40，发出买入信号（提高阈值，减少假信号）
+        if buy_strength >= 40:
             signal['action'] = 'BUY'
             signal['strength'] = min(buy_strength, 100)
             signal['reasons'] = buy_reasons
@@ -339,8 +339,8 @@ class StrategyEngine:
                 sell_strength += 5
                 sell_reasons.append(f'极强趋势(ADX:{latest["adx"]:.1f})')
 
-            # 如果信号强度 > 30，发出卖出信号
-            if sell_strength >= 30:
+            # 如果信号强度 > 40，发出卖出信号（提高阈值，减少假信号）
+            if sell_strength >= 40:
                 signal['action'] = 'SELL'
                 signal['strength'] = min(sell_strength, 100)
                 signal['reasons'] = sell_reasons
