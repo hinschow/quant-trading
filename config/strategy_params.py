@@ -76,14 +76,14 @@ TREND_FOLLOWING_PARAMS = {
     "bb_period": 20,
     "bb_std": 2.0,
 
-    # 止盈止损（关键优化）
-    "stop_loss_pct": 0.035,           # 放宽至3.5%（原2.5%），避免震荡止损
-    "take_profit_pct": 0.07,          # 提高至7%（原5%），提升盈亏比
-    "trailing_stop_trigger": 0.04,    # 盈利4%后启动移动止损（原3%）
-    "trailing_stop_pct": 0.015,       # 移动止损保留1.5%利润（原1%）
+    # 止盈止损（方案A：保守优化）
+    "stop_loss_pct": 0.03,            # 收紧至3%（从3.5%），更及时止损
+    "take_profit_pct": 0.05,          # 降至5%（从7%），更现实的目标
+    "trailing_stop_trigger": 0.03,    # 盈利3%后启动移动止损
+    "trailing_stop_pct": 0.01,        # 移动止损保留1%利润
 
     # 时间止损
-    "max_holding_hours": 96,          # 延长至96小时（原72），给趋势更多时间
+    "max_holding_hours": 60,          # 缩短至60小时（从96），减少风险暴露
 }
 
 # ==================== 均值回归策略参数（优化）====================
@@ -189,24 +189,24 @@ SENTIMENT_PARAMS = {
 # 针对不同品种的特性调整参数
 SYMBOL_SPECIFIC_PARAMS = {
     "BTC/USDT": {
-        # BTC 波动较小，需要更宽的止损
-        "stop_loss_pct": 0.04,        # 4% 止损
-        "take_profit_pct": 0.08,      # 8% 止盈
+        # BTC 波动较小（方案A：保守优化）
+        "stop_loss_pct": 0.03,        # 3% 止损（从4%收紧）
+        "take_profit_pct": 0.05,      # 5% 止盈（从8%降低）
         "min_signal_strength": 65,    # 更高的信号要求
         "adx_threshold": 35,          # 只在强趋势交易
     },
     "ETH/USDT": {
-        # ETH 波动性介于 BTC 和 SOL 之间
-        "stop_loss_pct": 0.04,        # 4% 止损
-        "take_profit_pct": 0.08,      # 8% 止盈
+        # ETH 波动性介于 BTC 和 SOL 之间（方案A）
+        "stop_loss_pct": 0.03,        # 3% 止损（从4%收紧）
+        "take_profit_pct": 0.05,      # 5% 止盈（从8%降低）
         "min_signal_strength": 65,    # 更高的信号要求
         "adx_threshold": 35,
     },
     "SOL/USDT": {
-        # SOL 波动较大，可以使用标准参数（表现最好）
-        "stop_loss_pct": 0.035,       # 3.5% 止损
-        "take_profit_pct": 0.07,      # 7% 止盈
-        "min_signal_strength": 55,    # 相对宽松（已证明有效）
+        # SOL 波动较大（方案A：收紧参数）
+        "stop_loss_pct": 0.025,       # 2.5% 止损（从3.5%收紧）
+        "take_profit_pct": 0.045,     # 4.5% 止盈（从7%降低）
+        "min_signal_strength": 60,    # 提高到60（从55）
         "adx_threshold": 30,          # 可以在一般趋势交易
     },
 }
