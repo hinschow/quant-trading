@@ -70,3 +70,5 @@ temp/
 *.key
 credentials.json
 secrets/
+.last_backup
+config/strategy_params_backup_*.py
