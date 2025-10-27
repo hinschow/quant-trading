@@ -1,0 +1,20 @@
+# 适配 Python 3.9 和 Mac 的依赖版本
+# 核心依赖
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# 数据处理（兼容Python 3.9）
+pandas>=2.0.0,<2.1.0
+numpy>=1.24.0,<2.0.0
+
+# TA-Lib（可选，如果安装失败可以跳过）
+ta-lib>=0.4.28
+
+# 交易所接口
+ccxt>=4.0.0,<4.3.0
+# 注意：ccxt.pro 已包含在 ccxt 4.x 中，不需要单独安装
+requests>=2.31.0
+
+# 工具库
+pytz>=2023.3
+python-dateutil>=2.8.2
