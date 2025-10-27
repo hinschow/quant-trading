@@ -24,7 +24,8 @@ from config.strategy_params import (
     MARKET_REGIME_PARAMS,
     MARKET_REGIME_STRATEGY,
     VOLUME_PARAMS,
-    SENTIMENT_PARAMS
+    SENTIMENT_PARAMS,
+    SYMBOL_SPECIFIC_PARAMS
 )
 from utils.market_sentiment import MarketSentiment
 
@@ -48,6 +49,7 @@ class StrategyEngine:
         self.mean_reversion_params = MEAN_REVERSION_PARAMS
         self.volume_params = VOLUME_PARAMS
         self.sentiment_params = SENTIMENT_PARAMS
+        self.symbol_specific_params = SYMBOL_SPECIFIC_PARAMS
 
         # 初始化市场情绪模块（用于获取资金费率和OI）
         try:
@@ -515,6 +517,24 @@ class StrategyEngine:
 
         # 添加具体的交易价格（买入价、止盈价、止损价）
         signal['trading_plan'] = self._calculate_trading_plan(df, signal, market_regime)
+
+
+        # 应用品种差异化参数过滤
+        if symbol and symbol in self.symbol_specific_params:
+            symbol_params = self.symbol_specific_params[symbol]
+            min_strength = symbol_params.get('min_signal_strength', 0)
+
+            # 如果信号强度不足，转为 HOLD
+            if signal.get('strength', 0) < min_strength:
+                logger.info(f"⚠️  信号强度 {signal.get('strength', 0)} < 品种要求 {min_strength}，过滤")
+                signal = {
+                    'type': 'FILTERED',
+                    'action': 'HOLD',
+                    'strength': signal.get('strength', 0),
+                    'reasons': [f'信号强度不足（{signal.get("strength", 0)} < {min_strength}）'],
+                    'market_regime': signal.get('market_regime'),
+                    'market_data': signal.get('market_data')
+                }
 
         return signal
 
