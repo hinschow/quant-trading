@@ -130,10 +130,22 @@ class SimpleBacktest:
             final_time = df.index[-1]
             self._execute_sell(final_time, final_price, {'reasons': ['回测结束，强制平仓']})
 
-        # 5. 计算回测结果
+        # 5. 检查是否有交易
+        if self.total_trades == 0:
+            logger.warning("\n⚠️  回测期间没有产生任何交易信号")
+            logger.warning("可能原因:")
+            logger.warning("  1. 数据量太少（建议至少500根K线）")
+            logger.warning("  2. 信号阈值太严格（当前阈值: 30分）")
+            logger.warning("  3. 市场状态不符合策略条件")
+            logger.warning("\n建议:")
+            logger.warning("  - 增加数据量: --limit 500")
+            logger.warning("  - 尝试其他时间段")
+            logger.warning("  - 查看信号分析: python3 signal_analyzer.py BTC/USDT -t 1h")
+
+        # 6. 计算回测结果
         results = self._calculate_results(df)
 
-        # 6. 显示结果
+        # 7. 显示结果
         self._print_results(results)
 
         return results
@@ -246,10 +258,13 @@ class SimpleBacktest:
         total_return = final_equity - self.initial_capital
         total_return_pct = (final_equity / self.initial_capital - 1) * 100
 
-        # 最大回撤
-        equity_df['max_equity'] = equity_df['equity'].cummax()
-        equity_df['drawdown'] = (equity_df['equity'] - equity_df['max_equity']) / equity_df['max_equity'] * 100
-        max_drawdown = equity_df['drawdown'].min()
+        # 最大回撤（只有在有数据时计算）
+        if len(equity_df) > 0:
+            equity_df['max_equity'] = equity_df['equity'].cummax()
+            equity_df['drawdown'] = (equity_df['equity'] - equity_df['max_equity']) / equity_df['max_equity'] * 100
+            max_drawdown = equity_df['drawdown'].min()
+        else:
+            max_drawdown = 0
 
         # 胜率
         win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
