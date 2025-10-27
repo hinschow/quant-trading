@@ -1,0 +1,41 @@
+{
+  "run_time": "2025-10-28T02:31:37.293163",
+  "duration_seconds": 42.829506,
+  "symbols": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT"
+  ],
+  "timeframes": {
+    "1h": {
+      "days": 60,
+      "desc": "1\u5c0f\u65f6\uff0860\u5929\u6570\u636e\uff09"
+    },
+    "30m": {
+      "days": 60,
+      "desc": "30\u5206\u949f\uff0860\u5929\u6570\u636e\uff09"
+    },
+    "15m": {
+      "days": 60,
+      "desc": "15\u5206\u949f\uff0860\u5929\u6570\u636e\uff09"
+    }
+  },
+  "capital": 10000,
+  "results": {
+    "1h": {
+      "BTC/USDT": "success",
+      "ETH/USDT": "success",
+      "SOL/USDT": "success"
+    },
+    "30m": {
+      "BTC/USDT": "success",
+      "ETH/USDT": "success",
+      "SOL/USDT": "success"
+    },
+    "15m": {
+      "BTC/USDT": "success",
+      "ETH/USDT": "success",
+      "SOL/USDT": "success"
+    }
+  }
+}
