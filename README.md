@@ -1,182 +1,261 @@
-# 数字货币量化交易系统 v3.2
+# 数字货币量化交易系统 v7.2
 
-基于 v3.1 稳健收益版的完整实现，融合趋势跟踪与均值回归策略，目标年化收益 15-25%，最大回撤 ≤8%。
+**Stage2.2**: 量价背离分级 + Hyperliquid资金费率 + 聪明钱包追踪 + 多数据源支持
 
-## 项目特点
-
-- ✅ **双策略引擎**：趋势跟踪 + 均值回归 + 布林带增强
-- ✅ **动态风险调整**：根据市场环境自适应调整仓位
-- ✅ **多交易所支持**：Binance、OKX、Bybit
-- ✅ **完整回测系统**：历史数据验证 + 参数优化
-- ✅ **实时监控告警**：Telegram 通知 + Grafana 仪表板
-- ✅ **容器化部署**：Docker Compose 一键启动
-
-## 目录结构
-
-```
-quant_trading/
-├── config/                  # 配置文件
-│   ├── settings.py         # 全局配置
-│   ├── strategy_params.py  # 策略参数
-│   └── risk_params.py      # 风险参数
-├── data/                    # 数据模块
-│   ├── collectors/         # 数据采集器
-│   │   ├── binance_collector.py
-│   │   ├── okx_collector.py
-│   │   └── bybit_collector.py
-│   └── storage/            # 数据存储
-│       ├── redis_handler.py
-│       └── postgres_handler.py
-├── strategies/             # 策略模块
-│   ├── base_strategy.py   # 策略基类
-│   ├── trend_following.py # 趋势跟踪
-│   ├── mean_reversion.py  # 均值回归
-│   └── market_regime.py   # 市场状态识别
-├── execution/              # 交易执行
-│   ├── order_manager.py   # 订单管理
-│   ├── position_manager.py # 仓位管理
-│   └── smart_router.py    # 智能路由
-├── risk/                   # 风险管理
-│   ├── risk_manager.py    # 风险管理器
-│   ├── position_sizer.py  # 仓位计算
-│   └── circuit_breaker.py # 熔断机制
-├── backtest/               # 回测系统
-│   ├── engine.py          # 回测引擎
-│   ├── metrics.py         # 性能指标
-│   └── optimizer.py       # 参数优化
-├── monitor/                # 监控模块
-│   ├── performance_tracker.py
-│   ├── alert_manager.py
-│   └── telegram_bot.py
-├── utils/                  # 工具模块
-│   ├── logger.py          # 日志系统
-│   ├── indicators.py      # 技术指标
-│   └── helpers.py         # 辅助函数
-├── tests/                  # 测试
-├── logs/                   # 日志文件
-├── docker-compose.yml      # Docker 配置
-├── requirements.txt        # 依赖包
-├── .env.example           # 环境变量示例
-└── main.py                # 主程序入口
-```
-
-## 快速开始
-
-### 1. 环境要求
-
-- Python 3.10+
-- Docker & Docker Compose
-- PostgreSQL 15+
-- Redis 7+
-
-### 2. 安装依赖
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. 配置环境变量
-
-```bash
-cp .env.example .env
-# 编辑 .env 填入你的 API Keys
-```
-
-### 4. 启动服务
-
-```bash
-# 启动数据库和缓存
-docker-compose up -d
-
-# 初始化数据库
-python scripts/init_db.py
-
-# 运行回测
-python main.py --mode backtest --start 2022-01-01 --end 2024-12-31
-
-# 运行模拟交易
-python main.py --mode paper
-
-# 运行实盘交易（谨慎！）
-python main.py --mode live
-```
-
-## 策略说明
-
-### 市场状态识别（整合 ADX + BBW）
-
-| 状态 | 条件 | 策略 | 仓位 |
-|------|------|------|------|
-| STRONG_TREND | ADX>30 且 BBW>1.2 | 趋势跟踪 | 100% |
-| TREND | ADX>25 且 BBW>1.0 | 趋势跟踪 | 80% |
-| RANGE | ADX<18 且 BBW<0.8 | 均值回归 | 60% |
-| SQUEEZE | BBW<0.5 | 突破策略 | 30% |
-| NEUTRAL | 其他 | 空仓 | 0% |
-
-### 趋势跟踪策略
-
-- **指标**：EMA(50/200)、ADX(30)、成交量确认
-- **止损**：1.5%
-- **止盈**：3%
-- **移动止损**：盈利>2%后移至成本价
-
-### 均值回归策略
-
-- **指标**：RSI(25/75)、布林带(2.5σ)、ATR过滤
-- **止损**：1.5%
-- **止盈**：价格回归中轨或RSI回到50
-
-## 风险控制
-
-- 单笔风险：≤1% 账户资金
-- 总仓位：≤50%
-- 单日最大亏损：≤3%
-- 最大回撤：≤8%（触发预警）
-- 熔断机制：回撤≥10% 全部平仓
-
-## 性能目标
-
-| 指标 | 目标值 |
-|------|--------|
-| 年化收益率 | 15-25% |
-| 最大回撤 | ≤8% |
-| 夏普比率 | ≥2.5 |
-| 盈亏比 | ≥1.8:1 |
-| 胜率 | ≥55% |
-
-## 监控与告警
-
-- **Telegram 通知**：交易信号、风险告警、每日报告
-- **Grafana 仪表板**：实时性能、仓位、收益曲线
-- **日志系统**：所有交易和风控事件记录
-
-## 测试
-
-```bash
-# 单元测试
-pytest tests/
-
-# 策略回测
-python -m backtest.engine --config config/backtest.yaml
-
-# 性能测试
-python tests/performance_test.py
-```
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-## 许可证
-
-MIT License
-
-## 免责声明
-
-本项目仅供学习和研究使用，不构成任何投资建议。数字货币交易具有极高风险，请谨慎使用。
+基于趋势跟踪策略，集成多个市场情绪指标，支持Hyperliquid和Binance双数据源。
 
 ---
 
-**版本**：v3.2
-**作者**：hins chow
-**更新时间**：2025-10-23
+## 🎯 核心特性
+
+### 1. 智能信号生成
+- ✅ **趋势跟踪**：EMA、MACD、ADX组合
+- ✅ **量价背离分级**：4级惩罚系统（-30/-20/-10/-5分）
+- ✅ **资金费率调整**：Hyperliquid实时费率（-15~+15分）
+- ✅ **聪明钱包追踪**：OI变化追踪大户行为（-20~+20分）
+- ✅ **动态阈值**：根据市场状态自适应
+
+### 2. 多数据源支持
+- 🟦 **Hyperliquid优先**：218+交易对，去中心化数据
+- 🟨 **Binance备用**：200+交易对，全球最大交易所
+- 🔄 **自动切换**：Hyperliquid不可用时自动回退到Binance
+- 💾 **数据持久化**：24小时滚动窗口，支持连续运行
+
+### 3. 完整回测系统
+- 📊 多周期回测（15m/30m/1h）
+- 📈 逐笔交易记录
+- 📉 性能指标分析
+- 🎯 参数优化支持
+
+---
+
+## 📁 项目结构
+
+```
+quant-trading/
+├── 📄 README.md                          本文档
+├── 📄 如何配置交易对.md                  配置指南（⭐必读）
+├── 📄 多数据源支持文档.md                技术文档
+├── 📄 Stage2.2_完成总结.md              版本总结
+├── 📄 项目结构.md                        详细结构说明
+│
+├── 🐍 strategy_engine.py                 策略引擎（信号生成）
+├── 🐍 backtest_engine.py                 回测引擎
+├── 🐍 realtime_engine.py                 实时交易引擎
+├── 🐍 data_collector.py                  数据收集器
+├── 🐍 websocket_stream.py                WebSocket数据流
+├── 🐍 run_multi_timeframe_backtest.py    多周期回测脚本
+│
+├── ⚙️ config/                            配置文件夹
+│   ├── strategy_params.py               策略参数（v7.2）
+│   └── storage_params.py                存储参数
+│
+├── 🛠️ utils/                             工具模块
+│   ├── indicators.py                    技术指标
+│   ├── hyperliquid_client.py            多数据源客户端
+│   ├── binance_data_client.py           Binance客户端
+│   ├── data_persistence.py              数据持久化
+│   ├── market_sentiment.py              市场情绪
+│   ├── exchange_info.py                 交易所信息
+│   └── data_buffer.py                   数据缓冲
+│
+├── 💾 data/                              数据文件夹
+│   └── persistence/                     持久化数据
+│
+├── 📊 backtest_results/                  回测结果
+│   └── multi_timeframe/30m/             最新结果（Stage2）
+│
+└── 📦 archived/                          归档文件夹
+```
+
+---
+
+## 🚀 快速开始
+
+### 1. 配置交易对
+
+编辑 `config/strategy_params.py`：
+
+```python
+# 配置你想交易的交易对
+TRADING_SYMBOLS = [
+    'BTC/USDT',
+    'ETH/USDT',
+    'SOL/USDT',
+    # 添加更多交易对...
+]
+```
+
+**详细说明**: 查看 [如何配置交易对.md](如何配置交易对.md)
+
+### 2. 运行回测
+
+```bash
+# 多周期回测（测试最优周期）
+python3 run_multi_timeframe_backtest.py
+
+# 查看结果
+ls -lh backtest_results/multi_timeframe/
+```
+
+### 3. 查看数据源
+
+```python
+from utils.hyperliquid_client import HyperliquidClient
+
+client = HyperliquidClient()
+
+# 测试交易对数据获取
+market_data = client.get_market_data('BTC/USDT')
+print(f"数据源: {market_data['source']}")  # hyperliquid 或 binance
+```
+
+---
+
+## 📊 Stage2.2 回测结果
+
+**时间范围**: 2025-10-13 ~ 2025-10-27 (30分钟周期)
+
+| 品种 | 交易数 | 收益率 | 胜率 | 盈亏比 | 最大回撤 |
+|-----|--------|--------|------|--------|----------|
+| BTC | 4笔 | -0.43% | 50% | 4.57 | -2.02% |
+| ETH | 5笔 | -5.02% | 40% | 0.65 | -6.06% |
+| SOL | 5笔 | +8.49% | 60% | 1.96 | -1.30% |
+| **总计** | **14笔** | **+3.04%** | **50%** | **1.47** | **-2.85%** |
+
+**核心改进**（vs Stage1）:
+- ✅ BTC性能提升：-3.37% → -0.43% (+2.95%)
+- ✅ 新增交易质量高（100%盈利率）
+- ✅ 量价背离分级系统按预期工作
+
+---
+
+## 🎯 策略说明
+
+### 信号强度计算
+
+```
+基础分数（趋势+技术指标）
+    ↓
+- 量价背离惩罚（-30/-20/-10/-5分）
+    ↓
++ 资金费率调整（-15~+15分）
+    ↓
++ 聪明钱包追踪（-20~+20分）
+    ↓
+最终信号强度 ≥ 40分 → 买入
+```
+
+### 量价背离分级
+
+| 背离程度 | OBV差距 | 惩罚 | 含义 |
+|---------|---------|------|------|
+| 严重背离 | >10% | -30分 | 强烈看空信号 |
+| 中度背离 | 5-10% | -20分 | 中等看空 |
+| 轻微背离 | 2-5% | -10分 | 轻度看空 |
+| 微弱背离 | ≤2% | -5分 | 略微看空 |
+
+### 资金费率调整
+
+| 费率范围 | 调整 | 市场情绪 |
+|---------|------|----------|
+| >1.5% | -15分 | 极度贪婪 |
+| >1.0% | -10分 | 贪婪 |
+| >0.5% | -5分 | 偏热 |
+| -0.5~0.5% | 0分 | 正常 |
+| <-0.5% | +5分 | 偏冷 |
+| <-1.0% | +10分 | 恐慌 |
+| <-1.5% | +15分 | 极度恐慌 |
+
+### 聪明钱包追踪
+
+| OI变化 | 价格变化 | 调整 | 含义 |
+|--------|---------|------|------|
+| ↑>5% | ↑>2% | +20分 | 大户做多 |
+| ↑>5% | ↓>2% | -20分 | 大户做空 |
+| ↓>3% | ↑>2% | -10分 | 获利了结 |
+| ↓>3% | ↓>2% | +5分 | 止损离场 |
+
+---
+
+## 📖 文档
+
+- **[如何配置交易对.md](如何配置交易对.md)** - 快速配置指南（必读）
+- **[多数据源支持文档.md](多数据源支持文档.md)** - 技术实现详解
+- **[Stage2.2_完成总结.md](Stage2.2_完成总结.md)** - 完整版本总结
+- **[项目结构.md](项目结构.md)** - 详细文件结构
+
+---
+
+## 🔧 技术栈
+
+- **语言**: Python 3.10+
+- **数据源**: Hyperliquid API + Binance Futures API
+- **技术指标**: TA-Lib, pandas, numpy
+- **数据持久化**: JSON (轻量级)
+- **回测引擎**: 自研逐笔回测
+
+---
+
+## ⚠️ 注意事项
+
+### 数据源选择
+- 系统会**优先使用Hyperliquid**（去中心化，支持聪明钱包追踪）
+- 如果Hyperliquid不支持该交易对，**自动切换到Binance**
+- 你只需要配置交易对列表，数据源切换完全自动
+
+### 实盘交易
+- Stage2.2集成的资金费率和聪明钱包追踪**无法回测**（只有实时数据）
+- 建议**小资金实盘验证**（$1000-2000，SOL单币种，2周）
+- 监控实盘效果后再决定是否扩大规模
+
+### 风险控制
+- 单笔止损：2.5-3%
+- 单笔止盈：4.5-5%
+- 建议起始资金：$5000+
+- 最大回撤警戒线：15%
+
+---
+
+## 🛠️ 开发计划
+
+### 已完成 ✅
+- [x] 量价背离分级系统
+- [x] Hyperliquid资金费率集成
+- [x] 聪明钱包OI追踪
+- [x] 多数据源支持（Hyperliquid + Binance）
+- [x] 数据持久化
+- [x] 用户自定义交易对配置
+
+### 计划中 🚧
+- [ ] 实盘小资金验证（SOL，2周）
+- [ ] 根据实盘结果调整参数
+- [ ] 添加更多数据源（OKX, Bybit）
+- [ ] WebSocket实时数据流
+- [ ] Telegram通知集成
+
+---
+
+## 📞 联系方式
+
+- **作者**: hins chow
+- **版本**: v7.2 (Stage2.2)
+- **最后更新**: 2025-10-28
+
+---
+
+## ⚖️ 免责声明
+
+本项目仅供学习和研究使用，不构成任何投资建议。
+
+数字货币交易具有极高风险，可能导致本金全部损失。请在充分了解风险的前提下谨慎使用，风险自负。
+
+**强烈建议**：
+1. 先进行充分的回测验证
+2. 使用小资金测试
+3. 设置严格的止损
+4. 不要使用借贷资金
+
+---
+
+**当前版本**: v7.2 (Stage2.2 - 多数据源支持)
