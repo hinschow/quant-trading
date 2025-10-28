@@ -1,6 +1,7 @@
 """
 Hyperliquid API客户端
 用于获取资金费率和聪明钱包数据
+支持自动回退到Binance（如果Hyperliquid没有该交易对）
 """
 
 import requests
@@ -12,23 +13,30 @@ from datetime import datetime
 # 处理相对导入
 try:
     from utils.data_persistence import DataPersistence
+    from utils.binance_data_client import BinanceDataClient
 except ImportError:
     from data_persistence import DataPersistence
+    from binance_data_client import BinanceDataClient
 
 logger = logging.getLogger(__name__)
 
 
 class HyperliquidClient:
-    """Hyperliquid数据采集客户端"""
+    """
+    多数据源市场数据客户端
+    优先使用Hyperliquid，如果不支持则自动回退到Binance
+    """
 
     def __init__(self, base_url: str = "https://api.hyperliquid.xyz",
-                 enable_persistence: bool = True):
+                 enable_persistence: bool = True,
+                 enable_binance_fallback: bool = True):
         """
-        初始化Hyperliquid客户端
+        初始化市场数据客户端
 
         Args:
             base_url: Hyperliquid API基础URL
             enable_persistence: 是否启用数据持久化
+            enable_binance_fallback: 是否启用Binance备用数据源
         """
         self.base_url = base_url
         self.info_url = f"{base_url}/info"
@@ -42,6 +50,22 @@ class HyperliquidClient:
             'ETHUSDT': 'ETH',
             'SOLUSDT': 'SOL',
         }
+
+        # 数据源标记（记录每个交易对使用的数据源）
+        self.data_source = {}  # {symbol: 'hyperliquid' or 'binance'}
+
+        # Binance备用数据源
+        self.enable_binance_fallback = enable_binance_fallback
+        if enable_binance_fallback:
+            try:
+                self.binance_client = BinanceDataClient()
+                logger.info("✅ Binance备用数据源已启用")
+            except Exception as e:
+                logger.warning(f"⚠️  Binance客户端初始化失败: {e}")
+                self.binance_client = None
+                self.enable_binance_fallback = False
+        else:
+            self.binance_client = None
 
         # 数据持久化
         self.enable_persistence = enable_persistence
@@ -59,7 +83,7 @@ class HyperliquidClient:
             self.oi_history = {}
             self.funding_history = {}
 
-        logger.info("✅ Hyperliquid客户端初始化完成")
+        logger.info("✅ 市场数据客户端初始化完成")
 
     def _convert_symbol(self, symbol: str) -> str:
         """
@@ -75,20 +99,54 @@ class HyperliquidClient:
 
     def get_market_data(self, symbol: str) -> Optional[Dict]:
         """
-        获取Hyperliquid市场数据（资金费率 + OI）
+        获取市场数据（资金费率 + OI + 价格）
+        优先使用Hyperliquid，如果不支持则自动回退到Binance
 
         资金费率说明：
         - 正费率：多头支付空头（市场看多）
         - 负费率：空头支付多头（市场看空）
         - 每8小时结算一次（0:00, 8:00, 16:00 UTC）
-        - 费率单位：年化百分比的1/3（因为每天3次结算）
 
         Args:
             symbol: 交易对符号（如 'BTC/USDT'）
 
         Returns:
-            市场数据字典 {'funding_rate': float, 'open_interest': float, 'price': float}
+            市场数据字典 {'funding_rate': float, 'open_interest': float, 'price': float, 'timestamp': float, 'source': str}
             获取失败返回None
+        """
+        # 第一步：尝试从Hyperliquid获取
+        market_data = self._get_hyperliquid_data(symbol)
+
+        if market_data is not None:
+            market_data['source'] = 'hyperliquid'
+            self.data_source[symbol] = 'hyperliquid'
+            logger.debug(f"📊 {symbol} 使用Hyperliquid数据")
+            return market_data
+
+        # 第二步：如果Hyperliquid失败，回退到Binance
+        if self.enable_binance_fallback and self.binance_client:
+            logger.info(f"🔄 {symbol} 在Hyperliquid不可用，切换到Binance")
+            market_data = self.binance_client.get_market_data(symbol)
+
+            if market_data is not None:
+                market_data['source'] = 'binance'
+                self.data_source[symbol] = 'binance'
+                logger.info(f"✅ {symbol} 使用Binance数据")
+                return market_data
+
+        # 第三步：两个数据源都失败
+        logger.error(f"❌ {symbol} 无法从任何数据源获取市场数据")
+        return None
+
+    def _get_hyperliquid_data(self, symbol: str) -> Optional[Dict]:
+        """
+        从Hyperliquid获取市场数据（内部方法）
+
+        Args:
+            symbol: 交易对符号
+
+        Returns:
+            市场数据字典或None
         """
         hl_symbol = self._convert_symbol(symbol)
 
@@ -124,7 +182,7 @@ class HyperliquidClient:
                     break
 
             if asset_index is None:
-                logger.warning(f"⚠️  未找到 {symbol} 的交易对信息")
+                logger.debug(f"⚠️  Hyperliquid未找到 {symbol}")
                 return None
 
             # 从资产上下文中获取数据
@@ -142,17 +200,16 @@ class HyperliquidClient:
                         'timestamp': time.time()
                     }
 
-                    logger.debug(f"📊 {symbol} 资金费率: {funding_rate:.4%}, OI: {open_interest:.2f}")
                     return market_data
 
-            logger.warning(f"⚠️  未找到 {symbol} 的市场数据")
+            logger.debug(f"⚠️  Hyperliquid未找到 {symbol} 的市场数据")
             return None
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ 获取Hyperliquid市场数据失败: {e}")
+            logger.debug(f"⚠️  Hyperliquid API调用失败: {e}")
             return None
         except (ValueError, KeyError, IndexError) as e:
-            logger.error(f"❌ 解析Hyperliquid数据失败: {e}")
+            logger.debug(f"⚠️  Hyperliquid数据解析失败: {e}")
             return None
 
     def get_funding_rate(self, symbol: str) -> Optional[float]:

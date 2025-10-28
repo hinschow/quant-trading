@@ -199,6 +199,15 @@ VOLUME_PARAMS = {
     "vwap_deviation_threshold": 0.02,
 }
 
+# ==================== 交易对配置 ====================
+# 用户可自定义要交易的交易对列表
+# 系统会自动尝试从Hyperliquid获取数据，如果不可用则回退到Binance
+TRADING_SYMBOLS = [
+    'BTC/USDT',
+    'ETH/USDT',
+    'SOL/USDT',
+]
+
 # ==================== 市场情绪参数 ====================
 SENTIMENT_PARAMS = {
     "funding_rate_enabled": True,
