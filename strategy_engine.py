@@ -268,15 +268,35 @@ class StrategyEngine:
                 buy_strength += 15
                 buy_reasons.append('成交量确认(OBV上升)')
 
-            # 量价背离预警
+            # 量价背离预警（Stage2：分级惩罚）
             if len(df) >= 20:
                 # 检查价格和OBV是否都创了近期新高
                 price_new_high = latest['close'] >= df['close'].tail(20).max() * 0.99
                 obv_new_high = latest['obv'] >= df['obv'].tail(20).max() * 0.99
 
                 if price_new_high and not obv_new_high:
-                    buy_strength -= 30  # 从-20改为-30，更严格过滤假突破
-                    buy_reasons.append('⚠️ 量价背离(假突破风险)')
+                    # Stage2新增：计算背离程度，分级惩罚
+                    obv_high_20d = df['obv'].tail(20).max()
+                    obv_current = latest['obv']
+
+                    # OBV与其20日最高的差距（百分比）
+                    obv_gap_pct = ((obv_high_20d - obv_current) / abs(obv_high_20d) * 100) if obv_high_20d != 0 else 0
+
+                    # 分级惩罚
+                    if obv_gap_pct > 10:  # 严重背离
+                        penalty = 30
+                        buy_reasons.append(f'⚠️⚠️ 严重量价背离(OBV差距{obv_gap_pct:.1f}%)')
+                    elif obv_gap_pct > 5:  # 中度背离
+                        penalty = 20
+                        buy_reasons.append(f'⚠️ 中度量价背离(OBV差距{obv_gap_pct:.1f}%)')
+                    elif obv_gap_pct > 2:  # 轻微背离
+                        penalty = 10
+                        buy_reasons.append(f'⚠️ 轻微背离(OBV差距{obv_gap_pct:.1f}%)')
+                    else:  # 微弱背离（OBV差距≤2%）
+                        penalty = 5
+                        buy_reasons.append(f'注意：微弱背离(OBV差距{obv_gap_pct:.1f}%)')
+
+                    buy_strength -= penalty
 
         # ADX 确认（可选）
         if latest['adx'] > 25:
