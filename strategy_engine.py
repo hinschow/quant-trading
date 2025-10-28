@@ -28,6 +28,7 @@ from config.strategy_params import (
     SYMBOL_SPECIFIC_PARAMS
 )
 from utils.market_sentiment import MarketSentiment
+from utils.hyperliquid_client import HyperliquidClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,13 +37,14 @@ logger = logging.getLogger(__name__)
 class StrategyEngine:
     """策略引擎 - 负责市场分析和信号生成"""
 
-    def __init__(self, exchange: str = 'binance', proxy: Optional[str] = None):
+    def __init__(self, exchange: str = 'binance', proxy: Optional[str] = None, use_hyperliquid: bool = True):
         """
         初始化策略引擎
 
         Args:
             exchange: 交易所名称
             proxy: 代理地址
+            use_hyperliquid: 是否启用Hyperliquid资金费率
         """
         self.market_regime_params = MARKET_REGIME_PARAMS
         self.trend_params = TREND_FOLLOWING_PARAMS
@@ -58,6 +60,19 @@ class StrategyEngine:
         except Exception as e:
             logger.warning(f"⚠️  市场情绪模块初始化失败: {e}，情绪指标将不可用")
             self.sentiment = None
+
+        # 初始化Hyperliquid客户端（用于获取资金费率）
+        self.use_hyperliquid = use_hyperliquid
+        if use_hyperliquid:
+            try:
+                self.hyperliquid = HyperliquidClient()
+                logger.info("✅ Hyperliquid客户端初始化完成")
+            except Exception as e:
+                logger.warning(f"⚠️  Hyperliquid客户端初始化失败: {e}，资金费率将不可用")
+                self.hyperliquid = None
+                self.use_hyperliquid = False
+        else:
+            self.hyperliquid = None
 
         logger.info("✅ 策略引擎初始化完成")
 
@@ -307,6 +322,16 @@ class StrategyEngine:
         if latest['adx'] > 40:
             buy_strength += 5
             buy_reasons.append(f'极强趋势(ADX:{latest["adx"]:.1f})')
+
+        # Hyperliquid资金费率调整（Stage2.1新增）
+        if self.use_hyperliquid and self.hyperliquid:
+            try:
+                adjustment, description = self.hyperliquid.get_funding_signal(symbol)
+                if adjustment != 0:
+                    buy_strength += adjustment
+                    buy_reasons.append(description)
+            except Exception as e:
+                logger.warning(f"⚠️  获取Hyperliquid资金费率失败: {e}")
 
         # 如果信号强度 > 40，发出买入信号（提高阈值，减少假信号）
         if buy_strength >= 40:
