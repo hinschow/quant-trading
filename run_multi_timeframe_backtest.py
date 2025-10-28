@@ -77,10 +77,17 @@ def main():
         print("   cd /path/to/quant-trading")
         sys.exit(1)
 
-    # 配置
-    symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+    # 配置 - 从配置文件读取交易对
+    try:
+        from config.strategy_params import TRADING_SYMBOLS
+        symbols = TRADING_SYMBOLS
+        print(f"✓ 从配置文件读取到 {len(symbols)} 个交易对")
+    except ImportError:
+        symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+        print(f"⚠️  未找到配置文件，使用默认交易对: {symbols}")
 
-    # 时间周期配置
+    # 时间周期配置（可修改 days 参数来调整回测时长）
+    # 例如：{'days': 90} = 回测最近90天数据
     timeframes = {
         '1h': {'days': 60, 'desc': '1小时（60天数据）'},
         '30m': {'days': 60, 'desc': '30分钟（60天数据）'},

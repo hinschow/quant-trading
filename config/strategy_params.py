@@ -206,6 +206,11 @@ TRADING_SYMBOLS = [
     'BTC/USDT',
     'ETH/USDT',
     'SOL/USDT',
+    'SNX/USDT',
+    'BNB/USDT',
+    'SUI/USDT',
+    '1000RATS/USDT',
+    'M/USDT',
 ]
 
 # ==================== 市场情绪参数 ====================
