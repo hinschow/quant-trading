@@ -524,6 +524,33 @@ class StrategyEngine:
             symbol_params = self.symbol_specific_params[symbol]
             min_strength = symbol_params.get('min_signal_strength', 0)
 
+            # 方案B新增：量价背离过滤
+            filter_divergence = symbol_params.get('filter_divergence_enabled', False)
+            min_strength_with_divergence = symbol_params.get('min_signal_with_divergence', 75)
+
+            # 检查是否有量价背离警告
+            has_divergence = False
+            if signal.get('reasons'):
+                for reason in signal.get('reasons', []):
+                    if '量价背离' in reason or '假突破风险' in reason:
+                        has_divergence = True
+                        break
+
+            # 如果启用量价背离过滤且存在背离警告
+            if filter_divergence and has_divergence:
+                current_strength = signal.get('strength', 0)
+                if current_strength < min_strength_with_divergence:
+                    logger.info(f"⚠️  量价背离风险：信号强度 {current_strength} < 要求 {min_strength_with_divergence}，过滤")
+                    signal = {
+                        'type': 'FILTERED_DIVERGENCE',
+                        'action': 'HOLD',
+                        'strength': current_strength,
+                        'reasons': [f'量价背离风险过高（强度{current_strength} < {min_strength_with_divergence}）'],
+                        'market_regime': signal.get('market_regime'),
+                        'market_data': signal.get('market_data')
+                    }
+                    return signal
+
             # 如果信号强度不足，转为 HOLD
             if signal.get('strength', 0) < min_strength:
                 logger.info(f"⚠️  信号强度 {signal.get('strength', 0)} < 品种要求 {min_strength}，过滤")
