@@ -5,8 +5,15 @@ Hyperliquid API客户端
 
 import requests
 import logging
-from typing import Dict, Optional
+import time
+from typing import Dict, Optional, List
 from datetime import datetime
+
+# 处理相对导入
+try:
+    from utils.data_persistence import DataPersistence
+except ImportError:
+    from data_persistence import DataPersistence
 
 logger = logging.getLogger(__name__)
 
@@ -14,12 +21,14 @@ logger = logging.getLogger(__name__)
 class HyperliquidClient:
     """Hyperliquid数据采集客户端"""
 
-    def __init__(self, base_url: str = "https://api.hyperliquid.xyz"):
+    def __init__(self, base_url: str = "https://api.hyperliquid.xyz",
+                 enable_persistence: bool = True):
         """
         初始化Hyperliquid客户端
 
         Args:
             base_url: Hyperliquid API基础URL
+            enable_persistence: 是否启用数据持久化
         """
         self.base_url = base_url
         self.info_url = f"{base_url}/info"
@@ -33,6 +42,22 @@ class HyperliquidClient:
             'ETHUSDT': 'ETH',
             'SOLUSDT': 'SOL',
         }
+
+        # 数据持久化
+        self.enable_persistence = enable_persistence
+        if enable_persistence:
+            self.persistence = DataPersistence()
+
+            # 加载历史数据
+            self.oi_history = self.persistence.load_oi_history(max_age_hours=24) or {}
+            self.funding_history = self.persistence.load_funding_rate_history(max_age_hours=24) or {}
+
+            logger.info(f"✅ 加载历史数据: OI={len(self.oi_history)}个交易对, "
+                       f"资金费率={len(self.funding_history)}个交易对")
+        else:
+            self.persistence = None
+            self.oi_history = {}
+            self.funding_history = {}
 
         logger.info("✅ Hyperliquid客户端初始化完成")
 
@@ -48,9 +73,9 @@ class HyperliquidClient:
         """
         return self.symbol_map.get(symbol, symbol.replace('/USDT', '').replace('USDT', ''))
 
-    def get_funding_rate(self, symbol: str) -> Optional[float]:
+    def get_market_data(self, symbol: str) -> Optional[Dict]:
         """
-        获取Hyperliquid资金费率
+        获取Hyperliquid市场数据（资金费率 + OI）
 
         资金费率说明：
         - 正费率：多头支付空头（市场看多）
@@ -62,7 +87,8 @@ class HyperliquidClient:
             symbol: 交易对符号（如 'BTC/USDT'）
 
         Returns:
-            资金费率（小数形式，如 0.0001 = 0.01%），获取失败返回None
+            市场数据字典 {'funding_rate': float, 'open_interest': float, 'price': float}
+            获取失败返回None
         """
         hl_symbol = self._convert_symbol(symbol)
 
@@ -78,7 +104,7 @@ class HyperliquidClient:
 
             # Hyperliquid API返回格式：
             # [0]: metadata (universe, marginTables等)
-            # [1]: 资产上下文数组，每个元素包含funding等字段
+            # [1]: 资产上下文数组，每个元素包含funding, openInterest等字段
 
             if not isinstance(data, list) or len(data) < 2:
                 logger.error(f"❌ Hyperliquid API返回格式异常")
@@ -101,23 +127,46 @@ class HyperliquidClient:
                 logger.warning(f"⚠️  未找到 {symbol} 的交易对信息")
                 return None
 
-            # 从资产上下文中获取funding费率
+            # 从资产上下文中获取数据
             if isinstance(asset_contexts, list) and asset_index < len(asset_contexts):
                 asset_ctx = asset_contexts[asset_index]
-                if isinstance(asset_ctx, dict) and 'funding' in asset_ctx:
-                    funding_rate = float(asset_ctx['funding'])
-                    logger.info(f"📊 {symbol} 资金费率: {funding_rate:.4%}")
-                    return funding_rate
+                if isinstance(asset_ctx, dict):
+                    funding_rate = float(asset_ctx.get('funding', 0))
+                    open_interest = float(asset_ctx.get('openInterest', 0))
+                    mark_price = float(asset_ctx.get('markPx', 0))
 
-            logger.warning(f"⚠️  未找到 {symbol} 的资金费率数据")
+                    market_data = {
+                        'funding_rate': funding_rate,
+                        'open_interest': open_interest,
+                        'price': mark_price,
+                        'timestamp': time.time()
+                    }
+
+                    logger.debug(f"📊 {symbol} 资金费率: {funding_rate:.4%}, OI: {open_interest:.2f}")
+                    return market_data
+
+            logger.warning(f"⚠️  未找到 {symbol} 的市场数据")
             return None
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ 获取Hyperliquid资金费率失败: {e}")
+            logger.error(f"❌ 获取Hyperliquid市场数据失败: {e}")
             return None
         except (ValueError, KeyError, IndexError) as e:
             logger.error(f"❌ 解析Hyperliquid数据失败: {e}")
             return None
+
+    def get_funding_rate(self, symbol: str) -> Optional[float]:
+        """
+        获取Hyperliquid资金费率（向后兼容）
+
+        Args:
+            symbol: 交易对符号（如 'BTC/USDT'）
+
+        Returns:
+            资金费率（小数形式，如 0.0001 = 0.01%），获取失败返回None
+        """
+        market_data = self.get_market_data(symbol)
+        return market_data['funding_rate'] if market_data else None
 
     def get_all_funding_rates(self) -> Dict[str, float]:
         """
@@ -207,9 +256,57 @@ class HyperliquidClient:
         else:
             return 15
 
+    def _update_history(self, symbol: str, market_data: Dict) -> None:
+        """
+        更新历史数据并保存
+
+        Args:
+            symbol: 交易对符号
+            market_data: 市场数据
+        """
+        # 更新OI历史
+        if symbol not in self.oi_history:
+            self.oi_history[symbol] = []
+
+        self.oi_history[symbol].append({
+            'timestamp': market_data['timestamp'],
+            'oi': market_data['open_interest'],
+            'price': market_data['price']
+        })
+
+        # 只保留最近24小时的数据
+        cutoff_time = time.time() - 24 * 3600
+        self.oi_history[symbol] = [
+            point for point in self.oi_history[symbol]
+            if point['timestamp'] > cutoff_time
+        ]
+
+        # 更新资金费率历史
+        if symbol not in self.funding_history:
+            self.funding_history[symbol] = []
+
+        self.funding_history[symbol].append({
+            'timestamp': market_data['timestamp'],
+            'funding_rate': market_data['funding_rate']
+        })
+
+        # 只保留最近24小时的数据
+        self.funding_history[symbol] = [
+            point for point in self.funding_history[symbol]
+            if point['timestamp'] > cutoff_time
+        ]
+
+        # 保存到磁盘
+        if self.enable_persistence and self.persistence:
+            try:
+                self.persistence.save_oi_history(self.oi_history)
+                self.persistence.save_funding_rate_history(self.funding_history)
+            except Exception as e:
+                logger.warning(f"⚠️  保存历史数据失败: {e}")
+
     def get_funding_signal(self, symbol: str) -> tuple[int, str]:
         """
-        获取资金费率信号
+        获取资金费率信号（并更新历史数据）
 
         Args:
             symbol: 交易对符号
@@ -217,11 +314,18 @@ class HyperliquidClient:
         Returns:
             (调整值, 描述信息) 元组
         """
-        funding_rate = self.get_funding_rate(symbol)
+        # 获取完整市场数据（包含OI）
+        market_data = self.get_market_data(symbol)
 
-        if funding_rate is None:
+        if market_data is None:
             return (0, '')
 
+        funding_rate = market_data['funding_rate']
+
+        # 更新历史数据
+        self._update_history(symbol, market_data)
+
+        # 计算资金费率调整
         adjustment = self.calculate_funding_adjustment(funding_rate)
 
         # 生成描述信息
@@ -238,6 +342,170 @@ class HyperliquidClient:
             description = f'资金费率正常(资金费率:{funding_rate:.3%})'
 
         return (adjustment, description)
+
+
+class SmartMoneyTracker:
+    """
+    聪明钱包追踪器
+    通过OI变化识别大户行为
+    """
+
+    def __init__(self, hyperliquid_client: HyperliquidClient):
+        """
+        初始化聪明钱包追踪器
+
+        Args:
+            hyperliquid_client: Hyperliquid客户端实例
+        """
+        self.client = hyperliquid_client
+        logger.info("✅ 聪明钱包追踪器初始化完成")
+
+    def get_oi_change(self, symbol: str, window_hours: float = 1.0) -> Optional[Dict]:
+        """
+        获取OI变化情况
+
+        Args:
+            symbol: 交易对符号
+            window_hours: 时间窗口（小时）
+
+        Returns:
+            OI变化数据字典 {'oi_change_pct': float, 'price_change_pct': float, 'direction': str}
+        """
+        # 获取历史数据
+        oi_history = self.client.oi_history.get(symbol, [])
+
+        if len(oi_history) < 2:
+            logger.debug(f"📊 {symbol} OI历史数据不足（需要至少2个数据点）")
+            return None
+
+        # 获取时间窗口内的数据
+        current_time = time.time()
+        cutoff_time = current_time - (window_hours * 3600)
+
+        # 找到窗口开始时的数据点（最接近cutoff_time的数据点）
+        old_data = None
+        for point in oi_history:
+            if point['timestamp'] >= cutoff_time:
+                old_data = point
+                break
+
+        if old_data is None:
+            # 如果没有窗口内的数据，使用最老的数据点
+            old_data = oi_history[0]
+
+        # 最新数据
+        new_data = oi_history[-1]
+
+        # 计算变化率
+        oi_change_pct = ((new_data['oi'] - old_data['oi']) / old_data['oi'] * 100) if old_data['oi'] > 0 else 0
+        price_change_pct = ((new_data['price'] - old_data['price']) / old_data['price'] * 100) if old_data['price'] > 0 else 0
+
+        # 判断方向
+        if oi_change_pct > 0 and price_change_pct > 0:
+            direction = 'long'  # 大户做多
+        elif oi_change_pct > 0 and price_change_pct < 0:
+            direction = 'short'  # 大户做空
+        elif oi_change_pct < 0 and price_change_pct > 0:
+            direction = 'profit_taking'  # 获利了结
+        elif oi_change_pct < 0 and price_change_pct < 0:
+            direction = 'stop_loss'  # 止损离场
+        else:
+            direction = 'neutral'  # 无明显方向
+
+        return {
+            'oi_change_pct': oi_change_pct,
+            'price_change_pct': price_change_pct,
+            'direction': direction,
+            'old_oi': old_data['oi'],
+            'new_oi': new_data['oi'],
+            'old_price': old_data['price'],
+            'new_price': new_data['price'],
+            'time_span_hours': (new_data['timestamp'] - old_data['timestamp']) / 3600
+        }
+
+    def calculate_smart_money_adjustment(self, oi_change: Dict) -> int:
+        """
+        根据OI变化计算信号强度调整值
+
+        调整规则：
+        - OI↑ + 价格↑（大户做多）：+20分（阈值：OI增长>5%，价格上涨>2%）
+        - OI↑ + 价格↓（大户做空）：-20分（阈值：OI增长>5%，价格下跌>2%）
+        - OI↓ + 价格↑（获利了结）：-10分（阈值：OI减少>3%，价格上涨>2%）
+        - OI↓ + 价格↓（止损离场）：+5分（阈值：OI减少>3%，价格下跌>2%）
+        - 其他情况：0分
+
+        Args:
+            oi_change: OI变化数据
+
+        Returns:
+            信号强度调整值（-20 ~ +20）
+        """
+        oi_pct = oi_change['oi_change_pct']
+        price_pct = oi_change['price_change_pct']
+        direction = oi_change['direction']
+
+        # 大户做多：OI增长>5%，价格上涨>2%
+        if direction == 'long' and abs(oi_pct) > 5 and abs(price_pct) > 2:
+            return 20
+
+        # 大户做空：OI增长>5%，价格下跌>2%
+        elif direction == 'short' and abs(oi_pct) > 5 and abs(price_pct) > 2:
+            return -20
+
+        # 获利了结：OI减少>3%，价格上涨>2%
+        elif direction == 'profit_taking' and abs(oi_pct) > 3 and abs(price_pct) > 2:
+            return -10
+
+        # 止损离场：OI减少>3%，价格下跌>2%
+        elif direction == 'stop_loss' and abs(oi_pct) > 3 and abs(price_pct) > 2:
+            return 5
+
+        # 其他情况
+        else:
+            return 0
+
+    def get_smart_money_signal(self, symbol: str, window_hours: float = 1.0) -> tuple[int, str]:
+        """
+        获取聪明钱包信号
+
+        Args:
+            symbol: 交易对符号
+            window_hours: 时间窗口（小时）
+
+        Returns:
+            (调整值, 描述信息) 元组
+        """
+        try:
+            # 获取OI变化
+            oi_change = self.get_oi_change(symbol, window_hours)
+
+            if oi_change is None:
+                return (0, '')
+
+            # 计算调整值
+            adjustment = self.calculate_smart_money_adjustment(oi_change)
+
+            # 生成描述信息
+            oi_pct = oi_change['oi_change_pct']
+            price_pct = oi_change['price_change_pct']
+            direction = oi_change['direction']
+
+            if adjustment == 20:
+                description = f'💰 大户做多(OI↑{abs(oi_pct):.1f}%, 价格↑{abs(price_pct):.1f}%)'
+            elif adjustment == -20:
+                description = f'⚠️ 大户做空(OI↑{abs(oi_pct):.1f}%, 价格↓{abs(price_pct):.1f}%)'
+            elif adjustment == -10:
+                description = f'📉 获利了结(OI↓{abs(oi_pct):.1f}%, 价格↑{abs(price_pct):.1f}%)'
+            elif adjustment == 5:
+                description = f'🔄 止损离场(OI↓{abs(oi_pct):.1f}%, 价格↓{abs(price_pct):.1f}%)'
+            else:
+                description = f'OI变化不明显(OI{oi_pct:+.1f}%, 价格{price_pct:+.1f}%)'
+
+            return (adjustment, description)
+
+        except Exception as e:
+            logger.warning(f"⚠️  获取聪明钱包信号失败: {e}")
+            return (0, '')
 
 
 # 测试代码

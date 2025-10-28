@@ -85,8 +85,8 @@ class SimpleBacktest:
         logger.info(f"数据范围: {df.index[0]} ~ {df.index[-1]}")
         logger.info(f"数据条数: {len(df)}")
 
-        # 2. 初始化策略引擎（回测模式禁用Hyperliquid，因为无历史资金费率）
-        engine = StrategyEngine(use_hyperliquid=False)
+        # 2. 初始化策略引擎（回测模式禁用Hyperliquid和SmartMoney，因为无历史数据）
+        engine = StrategyEngine(use_hyperliquid=False, use_smart_money=False)
 
         # 3. 逐根K线回测
         logger.info(f"\n{'='*80}")

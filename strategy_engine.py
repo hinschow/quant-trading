@@ -28,7 +28,7 @@ from config.strategy_params import (
     SYMBOL_SPECIFIC_PARAMS
 )
 from utils.market_sentiment import MarketSentiment
-from utils.hyperliquid_client import HyperliquidClient
+from utils.hyperliquid_client import HyperliquidClient, SmartMoneyTracker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 class StrategyEngine:
     """策略引擎 - 负责市场分析和信号生成"""
 
-    def __init__(self, exchange: str = 'binance', proxy: Optional[str] = None, use_hyperliquid: bool = True):
+    def __init__(self, exchange: str = 'binance', proxy: Optional[str] = None,
+                 use_hyperliquid: bool = True, use_smart_money: bool = True):
         """
         初始化策略引擎
 
@@ -45,6 +46,7 @@ class StrategyEngine:
             exchange: 交易所名称
             proxy: 代理地址
             use_hyperliquid: 是否启用Hyperliquid资金费率
+            use_smart_money: 是否启用聪明钱包追踪
         """
         self.market_regime_params = MARKET_REGIME_PARAMS
         self.trend_params = TREND_FOLLOWING_PARAMS
@@ -63,16 +65,32 @@ class StrategyEngine:
 
         # 初始化Hyperliquid客户端（用于获取资金费率）
         self.use_hyperliquid = use_hyperliquid
+        self.use_smart_money = use_smart_money
         if use_hyperliquid:
             try:
-                self.hyperliquid = HyperliquidClient()
+                self.hyperliquid = HyperliquidClient(enable_persistence=True)
                 logger.info("✅ Hyperliquid客户端初始化完成")
+
+                # 初始化聪明钱包追踪器
+                if use_smart_money:
+                    try:
+                        self.smart_money_tracker = SmartMoneyTracker(self.hyperliquid)
+                        logger.info("✅ 聪明钱包追踪器初始化完成")
+                    except Exception as e:
+                        logger.warning(f"⚠️  聪明钱包追踪器初始化失败: {e}")
+                        self.smart_money_tracker = None
+                        self.use_smart_money = False
+                else:
+                    self.smart_money_tracker = None
             except Exception as e:
                 logger.warning(f"⚠️  Hyperliquid客户端初始化失败: {e}，资金费率将不可用")
                 self.hyperliquid = None
+                self.smart_money_tracker = None
                 self.use_hyperliquid = False
+                self.use_smart_money = False
         else:
             self.hyperliquid = None
+            self.smart_money_tracker = None
 
         logger.info("✅ 策略引擎初始化完成")
 
@@ -332,6 +350,16 @@ class StrategyEngine:
                     buy_reasons.append(description)
             except Exception as e:
                 logger.warning(f"⚠️  获取Hyperliquid资金费率失败: {e}")
+
+        # 聪明钱包追踪调整（Stage2.2新增）
+        if self.use_smart_money and self.smart_money_tracker:
+            try:
+                adjustment, description = self.smart_money_tracker.get_smart_money_signal(symbol, window_hours=1.0)
+                if adjustment != 0:
+                    buy_strength += adjustment
+                    buy_reasons.append(description)
+            except Exception as e:
+                logger.warning(f"⚠️  获取聪明钱包信号失败: {e}")
 
         # 如果信号强度 > 40，发出买入信号（提高阈值，减少假信号）
         if buy_strength >= 40:

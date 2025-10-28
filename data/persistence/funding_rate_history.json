@@ -1,0 +1,24 @@
+{
+  "saved_at": 1761663893.9550474,
+  "saved_at_readable": "2025-10-28 15:04:53",
+  "data": {
+    "BTC/USDT": [
+      {
+        "timestamp": 1761663893.3872914,
+        "funding_rate": 1.25e-05
+      }
+    ],
+    "ETH/USDT": [
+      {
+        "timestamp": 1761663893.6593242,
+        "funding_rate": 1.25e-05
+      }
+    ],
+    "SOL/USDT": [
+      {
+        "timestamp": 1761663893.954241,
+        "funding_rate": 1.25e-05
+      }
+    ]
+  }
+}
