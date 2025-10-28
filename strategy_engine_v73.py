@@ -69,7 +69,7 @@ class StrategyEngineV73(StrategyEngine):
 
         覆盖父类方法，添加配置化权重和过滤
         """
-        # 先调用父类方法获取原始信号
+        # 先调用父类方法获取原始信号（父类方法接受symbol参数）
         signal = super().generate_trend_signal(df, symbol)
 
         # 应用配置过滤
@@ -83,8 +83,8 @@ class StrategyEngineV73(StrategyEngine):
 
         覆盖父类方法，添加配置化权重和过滤
         """
-        # 先调用父类方法获取原始信号
-        signal = super().generate_mean_reversion_signal(df, symbol)
+        # 先调用父类方法获取原始信号（父类方法不接受symbol参数）
+        signal = super().generate_mean_reversion_signal(df)
 
         # 应用配置过滤
         signal = self._apply_config_filter(signal, 'mean_reversion')
