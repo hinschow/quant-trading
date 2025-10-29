@@ -220,20 +220,18 @@ def get_signals():
             if symbol_alerts:
                 all_alerts.extend([f"[{symbol.split('/')[0]}] {alert}" for alert in symbol_alerts])
 
-            # 放宽条件：降低门槛以显示更多信号
-            min_strength = max(45, config.get('min_signal_strength', 55) - 10)  # 降低10分
-
-            if signal_strength >= min_strength:
-                signals.append({
-                    'symbol': symbol,
-                    'type': signal_type,
-                    'strength': round(signal_strength, 1),
-                    'price': market_data.get('price', 0),
-                    'sentiment': sentiment_score,
-                    'funding_rate': funding_rate,
-                    'timestamp': datetime.now().isoformat(),
-                    'alerts': symbol_alerts,
-                })
+            # 显示所有启用的币种（即使信号强度不够）
+            # 但标注强度质量供用户判断
+            signals.append({
+                'symbol': symbol,
+                'type': signal_type,
+                'strength': round(signal_strength, 1),
+                'price': market_data.get('price', 0),
+                'sentiment': sentiment_score,
+                'funding_rate': funding_rate,
+                'timestamp': datetime.now().isoformat(),
+                'alerts': symbol_alerts,
+            })
 
         return jsonify({
             'success': True,
@@ -244,6 +242,130 @@ def get_signals():
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/trading_suggestions')
+def get_trading_suggestions():
+    """获取买卖指引建议"""
+    try:
+        suggestions = []
+
+        for symbol in TRADING_SYMBOLS:
+            config = SYMBOL_SPECIFIC_PARAMS.get(symbol, {})
+            if not config.get('enabled', True):
+                continue
+
+            # 获取市场数据
+            market_data = market_client.get_market_data(symbol) if market_client else {}
+            if not market_data.get('price'):
+                continue
+
+            current_price = market_data.get('price', 0)
+            funding_rate = market_data.get('funding_rate', 0)
+
+            # 获取情绪分析
+            sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol) if sentiment_analyzer else {}
+            sentiment_score = sentiment.get('total_score', 0)
+
+            # 计算信号强度（复用signals逻辑）
+            signal_strength = 60
+            signal_type = 'HOLD'  # 默认持有
+
+            # 资金费率判断
+            if funding_rate > 0.0015:
+                signal_strength -= 15
+                signal_type = 'SELL'
+            elif funding_rate > 0.0005:
+                signal_strength -= 5
+            elif funding_rate < -0.0015:
+                signal_strength += 15
+                signal_type = 'BUY'
+            elif funding_rate < -0.0005:
+                signal_strength += 5
+                signal_type = 'BUY'
+
+            # 情绪调整
+            signal_strength += sentiment_score * 0.5
+
+            # OI加分
+            if market_data.get('open_interest', 0) > 0:
+                signal_strength += 5
+
+            # 强度判断
+            min_strength = config.get('min_signal_strength', 55)
+            if signal_strength < min_strength - 10:
+                signal_type = 'HOLD'  # 信号太弱，持币观望
+
+            # 计算止盈止损价格
+            stop_loss_pct = config.get('stop_loss_pct', 0.03)
+            take_profit_pct = config.get('take_profit_pct', 0.05)
+
+            if signal_type == 'BUY':
+                entry_price = current_price
+                stop_loss = current_price * (1 - stop_loss_pct)
+                take_profit = current_price * (1 + take_profit_pct)
+                action = '做多'
+                confidence = 'high' if signal_strength >= min_strength else 'medium' if signal_strength >= min_strength - 5 else 'low'
+            elif signal_type == 'SELL':
+                entry_price = current_price
+                stop_loss = current_price * (1 + stop_loss_pct)
+                take_profit = current_price * (1 - take_profit_pct)
+                action = '做空'
+                confidence = 'high' if signal_strength >= min_strength else 'medium' if signal_strength >= min_strength - 5 else 'low'
+            else:
+                entry_price = current_price
+                stop_loss = None
+                take_profit = None
+                action = '观望'
+                confidence = 'low'
+
+            suggestions.append({
+                'symbol': symbol,
+                'action': action,  # 做多/做空/观望
+                'signal_type': signal_type,  # BUY/SELL/HOLD
+                'confidence': confidence,  # high/medium/low
+                'strength': round(signal_strength, 1),
+                'entry_price': round(entry_price, 6),
+                'stop_loss': round(stop_loss, 6) if stop_loss else None,
+                'take_profit': round(take_profit, 6) if take_profit else None,
+                'risk_reward_ratio': round(take_profit_pct / stop_loss_pct, 2) if stop_loss else None,
+                'sentiment': sentiment_score,
+                'funding_rate': funding_rate,
+                'reason': _generate_reason(signal_type, signal_strength, sentiment_score, funding_rate),
+            })
+
+        return jsonify({
+            'success': True,
+            'data': suggestions,
+            'count': len(suggestions)
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+def _generate_reason(signal_type, strength, sentiment, funding_rate):
+    """生成买卖原因说明"""
+    reasons = []
+
+    if signal_type == 'BUY':
+        if funding_rate < -0.001:
+            reasons.append('资金费率负值（空头占优，可能反转）')
+        if sentiment > 5:
+            reasons.append(f'外部情绪看涨（+{sentiment}分）')
+        if strength >= 70:
+            reasons.append('信号强度高')
+    elif signal_type == 'SELL':
+        if funding_rate > 0.001:
+            reasons.append('资金费率过高（多头拥挤）')
+        if sentiment < -5:
+            reasons.append(f'外部情绪看跌（{sentiment}分）')
+        if strength >= 70:
+            reasons.append('信号强度高')
+    else:
+        reasons.append('信号不够明确')
+
+    return '；'.join(reasons) if reasons else '市场中性'
 
 
 @app.route('/api/whale_alerts')

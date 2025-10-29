@@ -262,6 +262,38 @@
                     </div>
                 </div>
 
+                <!-- 买卖指引 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-compass"></i> 买卖指引建议
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>币种</th>
+                                        <th>方向</th>
+                                        <th>置信度</th>
+                                        <th>开仓价</th>
+                                        <th>止损</th>
+                                        <th>止盈</th>
+                                        <th>盈亏比</th>
+                                        <th>原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="suggestionsTable">
+                                    <tr>
+                                        <td colspan="8" class="text-center text-muted">
+                                            加载中...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 市场概览 -->
                 <div class="card">
                     <div class="card-header">
@@ -475,6 +507,69 @@
             }
         }
 
+        // 更新买卖指引
+        async function updateTradingSuggestions() {
+            try {
+                const response = await fetch('/api/trading_suggestions');
+                const result = await response.json();
+
+                if (!result.success) {
+                    console.error('API error:', result.error);
+                    return;
+                }
+
+                const tbody = document.getElementById('suggestionsTable');
+
+                if (result.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无建议</td></tr>';
+                } else {
+                    tbody.innerHTML = result.data.map(sug => {
+                        // 方向颜色和图标
+                        let actionClass = 'neutral';
+                        let actionIcon = '⏸️';
+                        if (sug.action === '做多') {
+                            actionClass = 'positive';
+                            actionIcon = '📈';
+                        } else if (sug.action === '做空') {
+                            actionClass = 'negative';
+                            actionIcon = '📉';
+                        }
+
+                        // 置信度徽章
+                        let confidenceBadge = '';
+                        if (sug.confidence === 'high') {
+                            confidenceBadge = '<span class="badge bg-success">高</span>';
+                        } else if (sug.confidence === 'medium') {
+                            confidenceBadge = '<span class="badge bg-warning">中</span>';
+                        } else {
+                            confidenceBadge = '<span class="badge bg-secondary">低</span>';
+                        }
+
+                        // 止盈止损显示
+                        const stopLossDisplay = sug.stop_loss ? `$${sug.stop_loss.toFixed(4)}` : '-';
+                        const takeProfitDisplay = sug.take_profit ? `$${sug.take_profit.toFixed(4)}` : '-';
+                        const rrRatioDisplay = sug.risk_reward_ratio ? `1:${sug.risk_reward_ratio}` : '-';
+
+                        return `
+                            <tr>
+                                <td><strong>${sug.symbol.replace('/USDT', '')}</strong></td>
+                                <td><span class="${actionClass}">${actionIcon} ${sug.action}</span></td>
+                                <td>${confidenceBadge}</td>
+                                <td>$${sug.entry_price.toFixed(4)}</td>
+                                <td class="negative">${stopLossDisplay}</td>
+                                <td class="positive">${takeProfitDisplay}</td>
+                                <td>${rrRatioDisplay}</td>
+                                <td><small>${sug.reason}</small></td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+            } catch (error) {
+                console.error('Failed to update trading suggestions:', error);
+            }
+        }
+
         // 更新新闻
         async function updateNews() {
             try {
@@ -608,6 +703,7 @@
                 await Promise.all([
                     updateMarketOverview(),
                     updateSignals(),
+                    updateTradingSuggestions(),
                     updateNews(),
                     updateWhaleAlerts(),
                     updateSentiment()
