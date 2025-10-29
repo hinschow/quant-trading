@@ -9,13 +9,17 @@ from urllib.parse import unquote
 import sys
 import os
 import json
+import logging
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.external_sentiment import get_sentiment_analyzer
 from utils.hyperliquid_client import HyperliquidClient
+from utils.signal_history import SignalHistoryRecorder
 from config.strategy_params import TRADING_SYMBOLS, SYMBOL_SPECIFIC_PARAMS
 
 app = Flask(__name__)
@@ -24,10 +28,11 @@ app.config['JSON_AS_ASCII'] = False  # 支持中文
 # 全局对象
 sentiment_analyzer = None
 market_client = None
+signal_recorder = None
 
 def init_services():
     """初始化服务"""
-    global sentiment_analyzer, market_client
+    global sentiment_analyzer, market_client, signal_recorder
     try:
         print("\n正在初始化Dashboard服务...")
 
@@ -46,6 +51,14 @@ def init_services():
         except Exception as e:
             print(f"  ⚠️  市场数据客户端初始化失败: {e}")
             market_client = None
+
+        # 初始化信号记录器
+        try:
+            signal_recorder = SignalHistoryRecorder()
+            print("  ✅ 信号历史记录器初始化成功")
+        except Exception as e:
+            print(f"  ⚠️  信号历史记录器初始化失败: {e}")
+            signal_recorder = None
 
         print("✅ Dashboard服务初始化完成\n")
 
@@ -336,9 +349,10 @@ def get_trading_suggestions():
                 action = '观望'
                 confidence = 'low'
 
-            suggestions.append({
+            suggestion = {
                 'symbol': symbol,
                 'action': action,  # 做多/做空/观望
+                'type': signal_type,  # BUY/SELL/HOLD (for recorder)
                 'signal_type': signal_type,  # BUY/SELL/HOLD
                 'confidence': confidence,  # high/medium/low
                 'strength': round(signal_strength, 1),
@@ -349,7 +363,20 @@ def get_trading_suggestions():
                 'sentiment': sentiment_score,
                 'funding_rate': funding_rate,
                 'reason': _generate_reason(signal_type, signal_strength, sentiment_score, funding_rate),
-            })
+                'timestamp': datetime.now().isoformat(),
+            }
+
+            # 只记录可交易的信号（非观望）
+            if signal_type in ['BUY', 'SELL'] and signal_recorder:
+                try:
+                    signal_recorder.record_signal(suggestion)
+                except Exception as e:
+                    logger.debug(f"记录信号失败: {e}")
+
+            # 根据请求参数决定是否过滤
+            show_all = request.args.get('show_all', 'false').lower() == 'true'
+            if show_all or signal_type != 'HOLD':
+                suggestions.append(suggestion)
 
         return jsonify({
             'success': True,
@@ -422,6 +449,51 @@ def get_whale_alerts():
             'success': True,
             'data': whale_transactions,
             'count': len(whale_transactions)
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/signal_history')
+def get_signal_history():
+    """获取信号历史记录"""
+    try:
+        if not signal_recorder:
+            return jsonify({'success': False, 'error': '信号记录器未初始化'})
+
+        # 获取查询参数
+        hours = int(request.args.get('hours', 24))
+        symbol = request.args.get('symbol', None)
+
+        # 查询历史信号
+        signals = signal_recorder.get_recent_signals(hours=hours, symbol=symbol)
+
+        return jsonify({
+            'success': True,
+            'data': signals,
+            'count': len(signals),
+            'hours': hours,
+            'symbol': symbol
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/signal_stats')
+def get_signal_stats():
+    """获取信号统计数据"""
+    try:
+        if not signal_recorder:
+            return jsonify({'success': False, 'error': '信号记录器未初始化'})
+
+        days = int(request.args.get('days', 7))
+        stats = signal_recorder.get_signal_stats(days=days)
+
+        return jsonify({
+            'success': True,
+            'data': stats
         })
 
     except Exception as e:
