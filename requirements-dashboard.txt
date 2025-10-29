@@ -1,0 +1,12 @@
+# Dashboard 额外依赖
+
+# Web框架
+Flask>=3.0.0
+Flask-CORS>=4.0.0
+
+# 数据处理（已在主requirements中）
+# pandas>=2.1.0
+# numpy>=1.26.0
+
+# 可选：更好的性能
+gunicorn>=21.2.0  # 生产环境WSGI服务器

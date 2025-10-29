@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化交易监控Dashboard</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        body {
+            background-color: #0f0f23;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .dashboard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .card {
+            background-color: #1a1a2e;
+            border: 1px solid #2d2d44;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .card-header {
+            background-color: #16213e;
+            border-bottom: 1px solid #2d2d44;
+            font-weight: 600;
+        }
+
+        .metric-card {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .metric-label {
+            color: #8a8a8a;
+            font-size: 0.9rem;
+        }
+
+        .positive {
+            color: #00d4aa;
+        }
+
+        .negative {
+            color: #ff4757;
+        }
+
+        .neutral {
+            color: #ffa502;
+        }
+
+        .signal-badge {
+            font-size: 0.75rem;
+            padding: 4px 8px;
+        }
+
+        .news-item {
+            padding: 12px;
+            border-bottom: 1px solid #2d2d44;
+            transition: background-color 0.2s;
+        }
+
+        .news-item:hover {
+            background-color: #252540;
+        }
+
+        .alert-box {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .alert-critical {
+            background-color: #ff475733;
+            border-left: 4px solid #ff4757;
+        }
+
+        .alert-warning {
+            background-color: #ffa50233;
+            border-left: 4px solid #ffa502;
+        }
+
+        .alert-info {
+            background-color: #2ed57333;
+            border-left: 4px solid #2ed573;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .status-online {
+            background-color: #2ed573;
+            box-shadow: 0 0 8px #2ed573;
+        }
+
+        .status-offline {
+            background-color: #ff4757;
+        }
+
+        .table-dark {
+            background-color: #1a1a2e;
+        }
+
+        .table-dark td, .table-dark th {
+            border-color: #2d2d44;
+        }
+
+        .refresh-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+            z-index: 1000;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.1);
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .refresh-btn.loading i {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid px-4">
+        <!-- Header -->
+        <div class="dashboard-header mt-4">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h1 class="mb-0">
+                        <i class="bi bi-graph-up"></i> 量化交易监控系统
+                    </h1>
+                    <p class="mb-0 mt-2 opacity-75">
+                        实时监控 • 智能分析 • 精准决策
+                    </p>
+                </div>
+                <div class="col-md-6 text-end">
+                    <div class="mb-2">
+                        <span class="status-indicator status-online"></span>
+                        <span>实时连接</span>
+                    </div>
+                    <small id="updateTime">{{ update_time }}</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主要指标概览 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="metric-label">活跃信号</div>
+                    <div class="metric-value positive" id="activeSignals">0</div>
+                    <small class="text-muted">个交易机会</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="metric-label">监控币种</div>
+                    <div class="metric-value neutral" id="activeSymbols">{{ symbols|length }}</div>
+                    <small class="text-muted">个交易对</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="metric-label">新闻事件</div>
+                    <div class="metric-value" id="newsCount">0</div>
+                    <small class="text-muted">条最新消息</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="metric-label">市场情绪</div>
+                    <div class="metric-value neutral" id="marketSentiment">中性</div>
+                    <small class="text-muted" id="sentimentScore">0分</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 左侧：交易信号和市场数据 -->
+            <div class="col-md-8">
+                <!-- 告警区域 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-exclamation-triangle"></i> 重要告警
+                    </div>
+                    <div class="card-body" id="alertsContainer">
+                        <div class="text-muted text-center py-3">
+                            暂无告警
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 交易信号 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-lightning"></i> 实时交易信号
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>币种</th>
+                                        <th>信号</th>
+                                        <th>强度</th>
+                                        <th>价格</th>
+                                        <th>资金费率</th>
+                                        <th>情绪</th>
+                                        <th>时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="signalsTable">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted">
+                                            加载中...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 市场概览 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-bar-chart"></i> 市场概览
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>交易对</th>
+                                        <th>价格</th>
+                                        <th>资金费率</th>
+                                        <th>持仓量</th>
+                                        <th>数据源</th>
+                                        <th>状态</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="marketTable">
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted">
+                                            加载中...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：新闻和情绪 -->
+            <div class="col-md-4">
+                <!-- 鲸鱼动态 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-tsunami"></i> 鲸鱼动态
+                    </div>
+                    <div class="card-body" id="whaleAlertsContainer">
+                        <div class="text-muted text-center py-3">
+                            暂无大额交易
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 新闻资讯 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-newspaper"></i> 最新资讯
+                    </div>
+                    <div class="card-body p-0" style="max-height: 500px; overflow-y: auto;">
+                        <div id="newsContainer">
+                            <div class="text-muted text-center py-3">
+                                加载中...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 情绪分析 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-emoji-smile"></i> 情绪分析
+                    </div>
+                    <div class="card-body">
+                        <canvas id="sentimentChart" width="400" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 刷新按钮 -->
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
+        <i class="bi bi-arrow-clockwise"></i>
+    </button>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        let sentimentChart = null;
+
+        // 初始化图表
+        function initSentimentChart() {
+            const ctx = document.getElementById('sentimentChart').getContext('2d');
+            sentimentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '情绪得分',
+                        data: [],
+                        backgroundColor: function(context) {
+                            const value = context.parsed.y;
+                            return value > 0 ? '#00d4aa' : '#ff4757';
+                        },
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#2d2d44' },
+                            ticks: { color: '#8a8a8a' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#8a8a8a' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 更新市场概览
+        async function updateMarketOverview() {
+            try {
+                const response = await fetch('/api/market_overview');
+                const result = await response.json();
+
+                if (!result.success) {
+                    console.error('API error:', result.error);
+                    return;
+                }
+
+                const tbody = document.getElementById('marketTable');
+                tbody.innerHTML = result.data.map(item => `
+                    <tr>
+                        <td><strong>${item.symbol}</strong></td>
+                        <td>$${item.price.toFixed(2)}</td>
+                        <td class="${item.funding_rate > 0 ? 'negative' : 'positive'}">
+                            ${(item.funding_rate * 100).toFixed(4)}%
+                        </td>
+                        <td>$${item.open_interest.toLocaleString()}</td>
+                        <td><span class="badge bg-secondary">${item.data_source}</span></td>
+                        <td>
+                            ${item.enabled ?
+                                '<span class="badge bg-success">启用</span>' :
+                                '<span class="badge bg-danger">禁用</span>'}
+                        </td>
+                    </tr>
+                `).join('');
+
+                // 更新活跃币种数
+                const activeCount = result.data.filter(item => item.enabled).length;
+                document.getElementById('activeSymbols').textContent = activeCount;
+
+            } catch (error) {
+                console.error('Failed to update market overview:', error);
+            }
+        }
+
+        // 更新交易信号
+        async function updateSignals() {
+            try {
+                const response = await fetch('/api/signals');
+                const result = await response.json();
+
+                if (!result.success) {
+                    console.error('API error:', result.error);
+                    return;
+                }
+
+                const tbody = document.getElementById('signalsTable');
+                const alertsContainer = document.getElementById('alertsContainer');
+
+                if (result.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无信号</td></tr>';
+                } else {
+                    tbody.innerHTML = result.data.map(signal => `
+                        <tr>
+                            <td><strong>${signal.symbol}</strong></td>
+                            <td><span class="badge ${signal.type === 'BULLISH' ? 'bg-success' : signal.type === 'BEARISH' ? 'bg-danger' : 'bg-warning'}">${signal.type}</span></td>
+                            <td><strong class="positive">${signal.strength}</strong></td>
+                            <td>$${signal.price.toFixed(2)}</td>
+                            <td class="${signal.funding_rate > 0 ? 'negative' : 'positive'}">
+                                ${(signal.funding_rate * 100).toFixed(4)}%
+                            </td>
+                            <td class="${signal.sentiment > 0 ? 'positive' : signal.sentiment < 0 ? 'negative' : 'neutral'}">
+                                ${signal.sentiment > 0 ? '+' : ''}${signal.sentiment}
+                            </td>
+                            <td><small>${new Date(signal.timestamp).toLocaleTimeString()}</small></td>
+                        </tr>
+                    `).join('');
+
+                    // 更新告警
+                    const allAlerts = result.data.flatMap(s => s.alerts);
+                    if (allAlerts.length > 0) {
+                        alertsContainer.innerHTML = allAlerts.map(alert => `
+                            <div class="alert-box alert-critical">
+                                <i class="bi bi-bell-fill"></i> ${alert}
+                            </div>
+                        `).join('');
+                    }
+                }
+
+                document.getElementById('activeSignals').textContent = result.data.length;
+
+            } catch (error) {
+                console.error('Failed to update signals:', error);
+            }
+        }
+
+        // 更新新闻
+        async function updateNews() {
+            try {
+                const response = await fetch('/api/news');
+                const result = await response.json();
+
+                if (!result.success) {
+                    console.error('API error:', result.error);
+                    return;
+                }
+
+                const container = document.getElementById('newsContainer');
+
+                if (result.count === 0) {
+                    container.innerHTML = '<div class="text-muted text-center py-3">暂无新闻</div>';
+                } else {
+                    container.innerHTML = result.data.map(news => `
+                        <div class="news-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <a href="${news.url || '#'}" target="_blank" class="text-decoration-none text-light">
+                                        <strong>${news.title}</strong>
+                                    </a>
+                                    <div class="text-muted small mt-1">
+                                        <i class="bi bi-clock"></i> ${news.published_at ? new Date(news.published_at).toLocaleString('zh-CN') : '未知时间'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                document.getElementById('newsCount').textContent = result.count;
+
+            } catch (error) {
+                console.error('Failed to update news:', error);
+            }
+        }
+
+        // 更新情绪分析
+        async function updateSentiment() {
+            try {
+                const symbols = {{ symbols | tojson }};
+                const sentiments = [];
+
+                for (const symbol of symbols.slice(0, 5)) {  // 前5个币种
+                    const response = await fetch(`/api/sentiment/${symbol}`);
+                    const result = await response.json();
+
+                    if (result.success) {
+                        sentiments.push({
+                            symbol: symbol.replace('/USDT', ''),
+                            score: result.data.total_score
+                        });
+                    }
+                }
+
+                // 更新图表
+                if (sentimentChart) {
+                    sentimentChart.data.labels = sentiments.map(s => s.symbol);
+                    sentimentChart.data.datasets[0].data = sentiments.map(s => s.score);
+                    sentimentChart.update();
+                }
+
+                // 计算平均情绪
+                const avgSentiment = sentiments.reduce((sum, s) => sum + s.score, 0) / sentiments.length;
+                const sentimentText = avgSentiment > 10 ? '乐观' : avgSentiment < -10 ? '悲观' : '中性';
+                const sentimentClass = avgSentiment > 10 ? 'positive' : avgSentiment < -10 ? 'negative' : 'neutral';
+
+                document.getElementById('marketSentiment').textContent = sentimentText;
+                document.getElementById('marketSentiment').className = `metric-value ${sentimentClass}`;
+                document.getElementById('sentimentScore').textContent = `${avgSentiment.toFixed(1)}分`;
+
+            } catch (error) {
+                console.error('Failed to update sentiment:', error);
+            }
+        }
+
+        // 刷新所有数据
+        async function refreshAll() {
+            const btn = document.getElementById('refreshBtn');
+            btn.classList.add('loading');
+
+            try {
+                await Promise.all([
+                    updateMarketOverview(),
+                    updateSignals(),
+                    updateNews(),
+                    updateSentiment()
+                ]);
+
+                document.getElementById('updateTime').textContent = new Date().toLocaleString('zh-CN');
+            } finally {
+                btn.classList.remove('loading');
+            }
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initSentimentChart();
+            refreshAll();
+
+            // 每30秒自动刷新
+            setInterval(refreshAll, 30000);
+        });
+    </script>
+</body>
+</html>

@@ -170,11 +170,11 @@ SIGNAL_FUSION_PARAMS = {
     "enabled": True,
     "timeframe_weights": {
         "15m": 0.2,
-        "1h": 0.4,
-        "4h": 0.4,
+        "30m": 0.6,          # 大幅提高30m权重（回测最优）
+        "1h": 0.2,
     },
-    # 关键优化：提高信号强度阈值
-    "min_signal_strength": 60,        # 提高至60（原0.6，即60%），过滤弱信号
+    # 基于30m回测结果(胜率39.93%, 总收益+27%)调整
+    "min_signal_strength": 55,        # 从60降到55（30m胜率可接受）
     "signal_delay": 30,
 }
 
@@ -234,31 +234,89 @@ SENTIMENT_PARAMS = {
 # 针对不同品种的特性调整参数 - 第1阶段：降低阈值增加交易机会
 SYMBOL_SPECIFIC_PARAMS = {
     "BTC/USDT": {
-        # BTC 方案D-Stage1：进一步降低阈值，显著增加交易机会
+        # BTC: 1h周期最佳(-0.35%), 接近盈亏平衡
         "stop_loss_pct": 0.03,                  # 3% 止损
         "take_profit_pct": 0.05,                # 5% 止盈
-        "min_signal_strength": 55,              # 从60降到55 ⬇️（预期2笔→5-6笔）
-        "adx_threshold": 25,                    # 从30降到25 ⬇️（放宽趋势要求）
-        "min_signal_with_divergence": 75,       # 保持75（有背离时的最低强度）
-        "filter_divergence_enabled": True,      # 保持启用量价背离过滤
+        "min_signal_strength": 60,              # 维持标准
+        "adx_threshold": 30,                    # 1h需要较强趋势
+        "timeframe_preference": "1h",           # 优先1h周期
+        "trailing_stop_enabled": True,
+        "trailing_stop_trigger": 0.025,
+        "trailing_stop_pct": 0.015,
+        "enabled": True,
     },
     "ETH/USDT": {
-        # ETH 方案D-Stage1：适度降低阈值，增加交易机会
+        # ETH: 15m稍好(-5.87%), 但整体需提高门槛
         "stop_loss_pct": 0.03,                  # 3% 止损
-        "take_profit_pct": 0.05,                # 5% 止盈
-        "min_signal_strength": 60,              # 从65降到60 ⬇️（预期5笔→7-8笔）
-        "adx_threshold": 25,                    # 从30降到25 ⬇️（放宽趋势要求）
-        "min_signal_with_divergence": 75,       # 保持75
-        "filter_divergence_enabled": True,      # 保持启用
+        "take_profit_pct": 0.055,               # 5.5% 止盈
+        "min_signal_strength": 65,              # 提高门槛过滤弱信号
+        "adx_threshold": 28,
+        "volume_multiplier": 1.8,               # 加强成交量过滤
+        "timeframe_preference": "15m",
+        "enabled": True,
     },
     "SOL/USDT": {
-        # SOL 方案D-Stage1：保守降低阈值，保持盈利能力
+        # SOL: 30m表现优异(+8.4%, 胜率40%) - 保持优势
         "stop_loss_pct": 0.025,                 # 2.5% 止损
-        "take_profit_pct": 0.045,               # 4.5% 止盈
-        "min_signal_strength": 55,              # 从60降到55 ⬇️（保守增加机会）
-        "adx_threshold": 25,                    # 从30降到25 ⬇️（适应30m周期）
-        "min_signal_with_divergence": 80,       # 保持80（SOL更严格）
-        "filter_divergence_enabled": True,      # 保持启用
+        "take_profit_pct": 0.06,                # 提高到6%抓住更多利润
+        "min_signal_strength": 55,              # 维持当前水平
+        "adx_threshold": 25,                    # 适应30m周期
+        "trailing_stop_enabled": True,
+        "trailing_stop_trigger": 0.03,
+        "trailing_stop_pct": 0.015,
+        "timeframe_preference": "30m",          # 优先30m
+        "enabled": True,
+    },
+    "SNX/USDT": {
+        # SNX: 所有周期都亏损严重 - 暂时禁用
+        "stop_loss_pct": 0.025,
+        "take_profit_pct": 0.05,
+        "min_signal_strength": 75,              # 极高门槛
+        "adx_threshold": 35,
+        "enabled": False,                       # 禁用
+    },
+    "BNB/USDT": {
+        # BNB: 1h最好(-0.41%), 接近盈亏平衡
+        "stop_loss_pct": 0.03,
+        "take_profit_pct": 0.05,
+        "min_signal_strength": 60,
+        "adx_threshold": 30,
+        "timeframe_preference": "1h",
+        "trailing_stop_enabled": True,
+        "trailing_stop_trigger": 0.025,
+        "enabled": True,
+    },
+    "SUI/USDT": {
+        # SUI: 30m表现优秀(+5.78%, 胜率42%) - 保持优势
+        "stop_loss_pct": 0.03,
+        "take_profit_pct": 0.06,
+        "min_signal_strength": 50,              # 略微降低增加机会
+        "adx_threshold": 25,
+        "trailing_stop_enabled": True,
+        "trailing_stop_trigger": 0.03,
+        "trailing_stop_pct": 0.015,
+        "timeframe_preference": "30m",
+        "enabled": True,
+    },
+    "1000RATS/USDT": {
+        # 1000RATS: 30m惊艳表现(+84%, 胜率64%) - 关键盈利点
+        "stop_loss_pct": 0.04,                  # 4% 给波动空间
+        "take_profit_pct": 0.08,                # 8% 抓住大波动
+        "min_signal_strength": 45,              # 降低阈值(胜率已64%)
+        "adx_threshold": 22,                    # 适应高波动
+        "trailing_stop_enabled": True,
+        "trailing_stop_trigger": 0.04,          # 盈利4%启动
+        "trailing_stop_pct": 0.02,              # 保留2%利润
+        "timeframe_preference": "30m",
+        "enabled": True,
+    },
+    "M/USDT": {
+        # M: 15m稍好(-6.17%)但整体不佳 - 暂时禁用
+        "stop_loss_pct": 0.025,
+        "take_profit_pct": 0.05,
+        "min_signal_strength": 65,
+        "adx_threshold": 30,
+        "enabled": False,                       # 禁用
     },
 }
 
