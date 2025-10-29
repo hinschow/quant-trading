@@ -456,13 +456,15 @@
                     `).join('');
 
                     // 更新告警
-                    const allAlerts = result.data.flatMap(s => s.alerts);
+                    const allAlerts = result.all_alerts || result.data.flatMap(s => s.alerts || []);
                     if (allAlerts.length > 0) {
                         alertsContainer.innerHTML = allAlerts.map(alert => `
                             <div class="alert-box alert-critical">
                                 <i class="bi bi-bell-fill"></i> ${alert}
                             </div>
                         `).join('');
+                    } else {
+                        alertsContainer.innerHTML = '<div class="text-muted text-center py-3">暂无告警</div>';
                     }
                 }
 
@@ -509,6 +511,50 @@
 
             } catch (error) {
                 console.error('Failed to update news:', error);
+            }
+        }
+
+        // 更新鲸鱼动态
+        async function updateWhaleAlerts() {
+            try {
+                const response = await fetch('/api/whale_alerts');
+                const result = await response.json();
+
+                if (!result.success) {
+                    console.error('API error:', result.error);
+                    return;
+                }
+
+                const container = document.getElementById('whaleAlertsContainer');
+
+                if (result.count === 0) {
+                    container.innerHTML = '<div class="text-muted text-center py-3">暂无大额交易</div>';
+                } else {
+                    container.innerHTML = result.data.map(tx => {
+                        const typeIcon = tx.type === 'buy' ? '📈' : tx.type === 'sell' ? '📉' : '🔄';
+                        const typeClass = tx.type === 'buy' ? 'positive' : tx.type === 'sell' ? 'negative' : 'neutral';
+                        const valueFormatted = (tx.value_usd / 1000000).toFixed(2);
+
+                        return `
+                            <div class="news-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <div>
+                                            ${typeIcon} <strong>${tx.symbol}</strong>
+                                            <span class="${typeClass}">$${valueFormatted}M</span>
+                                        </div>
+                                        <div class="text-muted small mt-1">
+                                            ${tx.description || tx.type}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+            } catch (error) {
+                console.error('Failed to update whale alerts:', error);
             }
         }
 
@@ -563,6 +609,7 @@
                     updateMarketOverview(),
                     updateSignals(),
                     updateNews(),
+                    updateWhaleAlerts(),
                     updateSentiment()
                 ]);
 

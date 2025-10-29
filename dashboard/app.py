@@ -173,6 +173,7 @@ def get_signals():
     """获取交易信号"""
     try:
         signals = []
+        all_alerts = []
 
         for symbol in TRADING_SYMBOLS:
             config = SYMBOL_SPECIFIC_PARAMS.get(symbol, {})
@@ -181,29 +182,48 @@ def get_signals():
 
             # 获取市场数据
             market_data = market_client.get_market_data(symbol) if market_client else {}
+            if not market_data.get('price'):
+                continue  # 跳过无法获取数据的币种
 
             # 获取情绪分析
             sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol) if sentiment_analyzer else {}
 
-            # 简单的信号生成逻辑（实际应该调用strategy_engine）
-            signal_strength = 50  # 基础分数
+            # 改进的信号生成逻辑
+            signal_strength = 60  # 提高基础分数
             signal_type = 'NEUTRAL'
 
-            # 根据资金费率调整
+            # 根据资金费率调整（更激进）
             funding_rate = market_data.get('funding_rate', 0)
-            if funding_rate > 0.001:  # 0.1%
-                signal_strength -= 10
+            if funding_rate > 0.0015:  # 0.15%
+                signal_strength -= 15
                 signal_type = 'BEARISH'
-            elif funding_rate < -0.001:
-                signal_strength += 10
+            elif funding_rate > 0.0005:  # 0.05%
+                signal_strength -= 5
+            elif funding_rate < -0.0015:
+                signal_strength += 15
+                signal_type = 'BULLISH'
+            elif funding_rate < -0.0005:
+                signal_strength += 5
                 signal_type = 'BULLISH'
 
-            # 根据情绪调整
+            # 根据情绪调整（增强权重）
             sentiment_score = sentiment.get('total_score', 0)
-            signal_strength += sentiment_score * 0.3
+            signal_strength += sentiment_score * 0.5  # 从0.3提高到0.5
 
-            # 判断信号强度
-            if signal_strength >= config.get('min_signal_strength', 55):
+            # 根据持仓量变化调整
+            oi = market_data.get('open_interest', 0)
+            if oi > 0:
+                signal_strength += 5  # 有持仓数据加分
+
+            # 收集告警信息
+            symbol_alerts = sentiment.get('alerts', [])
+            if symbol_alerts:
+                all_alerts.extend([f"[{symbol.split('/')[0]}] {alert}" for alert in symbol_alerts])
+
+            # 放宽条件：降低门槛以显示更多信号
+            min_strength = max(45, config.get('min_signal_strength', 55) - 10)  # 降低10分
+
+            if signal_strength >= min_strength:
                 signals.append({
                     'symbol': symbol,
                     'type': signal_type,
@@ -212,13 +232,57 @@ def get_signals():
                     'sentiment': sentiment_score,
                     'funding_rate': funding_rate,
                     'timestamp': datetime.now().isoformat(),
-                    'alerts': sentiment.get('alerts', []),
+                    'alerts': symbol_alerts,
                 })
 
         return jsonify({
             'success': True,
             'data': signals,
-            'count': len(signals)
+            'count': len(signals),
+            'all_alerts': all_alerts  # 返回所有告警
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/whale_alerts')
+def get_whale_alerts():
+    """获取鲸鱼动态"""
+    try:
+        if not sentiment_analyzer:
+            return jsonify({'success': False, 'error': '情绪分析器未初始化'})
+
+        whale_transactions = []
+
+        # 获取主要币种的鲸鱼交易
+        for symbol in ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'SUI/USDT']:
+            try:
+                sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol)
+                whale_data = sentiment.get('details', {}).get('whale', {})
+                transactions = whale_data.get('transactions', [])
+
+                # 只保留最近的大额交易
+                for tx in transactions[:3]:  # 每个币种最多3条
+                    whale_transactions.append({
+                        'symbol': symbol.split('/')[0],
+                        'amount': tx.get('amount', 0),
+                        'value_usd': tx.get('value_usd', 0),
+                        'type': tx.get('type', 'unknown'),
+                        'timestamp': tx.get('timestamp', ''),
+                        'description': tx.get('description', '')
+                    })
+            except Exception as e:
+                continue
+
+        # 按金额排序，取前10条
+        whale_transactions.sort(key=lambda x: x.get('value_usd', 0), reverse=True)
+        whale_transactions = whale_transactions[:10]
+
+        return jsonify({
+            'success': True,
+            'data': whale_transactions,
+            'count': len(whale_transactions)
         })
 
     except Exception as e:
