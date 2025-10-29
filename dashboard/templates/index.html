@@ -79,6 +79,114 @@
             border-left-color: #ffc107;
         }
 
+        /* 明亮模式下的徽章颜色优化 */
+        body.light-mode .badge {
+            font-weight: 600;
+        }
+
+        body.light-mode .badge.bg-success {
+            background-color: #198754 !important;
+            color: #ffffff !important;
+        }
+
+        body.light-mode .badge.bg-warning {
+            background-color: #ffc107 !important;
+            color: #000000 !important;
+        }
+
+        body.light-mode .badge.bg-danger {
+            background-color: #dc3545 !important;
+            color: #ffffff !important;
+        }
+
+        body.light-mode .badge.bg-secondary {
+            background-color: #6c757d !important;
+            color: #ffffff !important;
+        }
+
+        /* 明亮模式下的正负值颜色优化 */
+        body.light-mode .positive {
+            color: #198754 !important;
+            font-weight: 600;
+        }
+
+        body.light-mode .negative {
+            color: #dc3545 !important;
+            font-weight: 600;
+        }
+
+        body.light-mode .neutral {
+            color: #6c757d !important;
+        }
+
+        /* 明亮模式下的表格行强化 */
+        body.light-mode .table-dark tbody tr {
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        body.light-mode .table-dark tbody tr:hover {
+            background-color: #e9ecef !important;
+        }
+
+        /* 明亮模式下的卡片头部强化 */
+        body.light-mode .card-header {
+            font-weight: 600;
+            background-color: #e9ecef;
+        }
+
+        /* 明亮模式下的按钮 */
+        body.light-mode .refresh-btn,
+        body.light-mode .theme-toggle-btn {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        /* 明亮模式下的新闻项 */
+        body.light-mode .news-item {
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        body.light-mode .news-item:hover {
+            background-color: #e9ecef;
+        }
+
+        /* 明亮模式下链接颜色 */
+        body.light-mode a {
+            color: #0d6efd;
+        }
+
+        body.light-mode a:hover {
+            color: #0a58ca;
+        }
+
+        /* 明亮模式下的指标卡片 */
+        body.light-mode .metric-card {
+            background-color: #ffffff;
+            border: 1px solid #dee2e6;
+        }
+
+        body.light-mode .metric-value {
+            color: #333333;
+        }
+
+        body.light-mode .metric-label {
+            color: #6c757d;
+        }
+
+        /* 明亮模式下表格头部加粗 */
+        body.light-mode .table-dark thead th {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        /* 明亮模式下的强信号突出显示 */
+        body.light-mode .table-dark tbody td strong {
+            color: #212529;
+        }
+
+        body.light-mode .table-dark tbody td small {
+            color: #6c757d;
+        }
+
         .dashboard-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 20px;

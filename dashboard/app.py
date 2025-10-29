@@ -186,7 +186,13 @@ def get_signals():
                 continue  # 跳过无法获取数据的币种
 
             # 获取情绪分析
-            sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol) if sentiment_analyzer else {}
+            try:
+                sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol) if sentiment_analyzer else {}
+                if sentiment is None:
+                    sentiment = {}
+            except Exception as e:
+                logger.debug(f"获取{symbol}情绪分析失败: {e}")
+                sentiment = {}
 
             # 改进的信号生成逻辑
             signal_strength = 60  # 提高基础分数
@@ -264,8 +270,15 @@ def get_trading_suggestions():
             funding_rate = market_data.get('funding_rate', 0)
 
             # 获取情绪分析
-            sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol) if sentiment_analyzer else {}
-            sentiment_score = sentiment.get('total_score', 0)
+            try:
+                sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol) if sentiment_analyzer else {}
+                if sentiment is None:
+                    sentiment = {}
+                sentiment_score = sentiment.get('total_score', 0)
+            except Exception as e:
+                logger.debug(f"获取{symbol}情绪分析失败: {e}")
+                sentiment = {}
+                sentiment_score = 0
 
             # 计算信号强度（复用signals逻辑）
             signal_strength = 60
