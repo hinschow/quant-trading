@@ -87,7 +87,15 @@ def main():
     print()
 
     timeframes = ['15m', '30m', '1h']
-    symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+
+    # 从配置文件读取交易对
+    try:
+        from config.strategy_params import TRADING_SYMBOLS
+        symbols = TRADING_SYMBOLS
+        print(f"✓ 从配置读取 {len(symbols)} 个交易对: {', '.join(symbols)}\n")
+    except ImportError:
+        symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+        print(f"⚠️  使用默认交易对: {', '.join(symbols)}\n")
 
     all_results = {}
 
