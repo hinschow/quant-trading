@@ -105,15 +105,23 @@ class SimpleWhaleMonitor:
             txs = data.get('txs', [])
 
             large_txs = []
+            # 假设BTC价格（实际应该从API获取，这里简化处理）
+            btc_price_usd = 100000  # 约10万美元
+
             for tx in txs:
                 # 计算总输出（satoshi转BTC）
                 total_out = sum(out.get('value', 0) for out in tx.get('out', []))
                 btc_amount = total_out / 100000000  # satoshi to BTC
 
                 if btc_amount >= min_value_btc:
+                    value_usd = btc_amount * btc_price_usd
+
                     large_txs.append({
                         'symbol': 'BTC',
                         'amount': btc_amount,
+                        'value_usd': value_usd,  # 添加美元价值
+                        'type': 'transfer',  # 链上转账类型未知，标记为transfer
+                        'description': f'{btc_amount:.2f} BTC 链上转账',
                         'hash': tx.get('hash', '')[:16] + '...',
                         'timestamp': datetime.fromtimestamp(tx.get('time', 0)).isoformat(),
                     })

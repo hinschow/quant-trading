@@ -13,10 +13,70 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
     <style>
+        /* 暗黑模式（默认） */
         body {
             background-color: #0f0f23;
             color: #e0e0e0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* 明亮模式 */
+        body.light-mode {
+            background-color: #f5f5f5;
+            color: #333333;
+        }
+
+        body.light-mode .card {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+        }
+
+        body.light-mode .card-header {
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            color: #333333;
+        }
+
+        body.light-mode .table-dark {
+            background-color: #ffffff;
+        }
+
+        body.light-mode .table-dark td,
+        body.light-mode .table-dark th {
+            border-color: #e0e0e0;
+            color: #333333;
+        }
+
+        body.light-mode .table-dark thead th {
+            background-color: #f8f9fa;
+            border-color: #e0e0e0;
+        }
+
+        body.light-mode .table-hover tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        body.light-mode .dashboard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+        }
+
+        body.light-mode .news-item {
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        body.light-mode .news-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        body.light-mode .text-muted {
+            color: #6c757d !important;
+        }
+
+        body.light-mode .alert-box {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
         }
 
         .dashboard-header {
@@ -158,6 +218,27 @@
 
         .refresh-btn.loading i {
             animation: spin 1s linear infinite;
+        }
+
+        .theme-toggle-btn {
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+            z-index: 1000;
+        }
+
+        .theme-toggle-btn:hover {
+            transform: scale(1.1);
         }
     </style>
 </head>
@@ -369,6 +450,11 @@
     <!-- 刷新按钮 -->
     <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
         <i class="bi bi-arrow-clockwise"></i>
+    </button>
+
+    <!-- 主题切换按钮 -->
+    <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()" title="切换主题">
+        <i class="bi bi-sun-fill" id="themeIcon"></i>
     </button>
 
     <!-- Bootstrap JS -->
@@ -626,9 +712,21 @@
                     container.innerHTML = '<div class="text-muted text-center py-3">暂无大额交易</div>';
                 } else {
                     container.innerHTML = result.data.map(tx => {
-                        const typeIcon = tx.type === 'buy' ? '📈' : tx.type === 'sell' ? '📉' : '🔄';
-                        const typeClass = tx.type === 'buy' ? 'positive' : tx.type === 'sell' ? 'negative' : 'neutral';
-                        const valueFormatted = (tx.value_usd / 1000000).toFixed(2);
+                        // 类型图标和样式（兜底处理）
+                        const type = tx.type || 'transfer';
+                        const typeIcon = type === 'buy' ? '📈' : type === 'sell' ? '📉' : '🔄';
+                        const typeClass = type === 'buy' ? 'positive' : type === 'sell' ? 'negative' : 'neutral';
+
+                        // 金额显示（兜底处理）
+                        const valueUsd = tx.value_usd || 0;
+                        const valueFormatted = (valueUsd / 1000000).toFixed(2);
+
+                        // 描述（兜底处理）
+                        let description = tx.description;
+                        if (!description || description === 'unknown') {
+                            const typeText = type === 'buy' ? '买入' : type === 'sell' ? '卖出' : '转账';
+                            description = `${tx.symbol} 链上${typeText}`;
+                        }
 
                         return `
                             <div class="news-item">
@@ -639,7 +737,7 @@
                                             <span class="${typeClass}">$${valueFormatted}M</span>
                                         </div>
                                         <div class="text-muted small mt-1">
-                                            ${tx.description || tx.type}
+                                            ${description}
                                         </div>
                                     </div>
                                 </div>
@@ -715,8 +813,58 @@
             }
         }
 
+        // 主题切换
+        function toggleTheme() {
+            const body = document.body;
+            const themeIcon = document.getElementById('themeIcon');
+
+            if (body.classList.contains('light-mode')) {
+                // 切换到暗黑模式
+                body.classList.remove('light-mode');
+                themeIcon.classList.remove('bi-moon-fill');
+                themeIcon.classList.add('bi-sun-fill');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                // 切换到明亮模式
+                body.classList.add('light-mode');
+                themeIcon.classList.remove('bi-sun-fill');
+                themeIcon.classList.add('bi-moon-fill');
+                localStorage.setItem('theme', 'light');
+            }
+
+            // 重新渲染图表以适应主题
+            if (sentimentChart) {
+                updateChartTheme();
+            }
+        }
+
+        // 更新图表主题
+        function updateChartTheme() {
+            const isLight = document.body.classList.contains('light-mode');
+            const gridColor = isLight ? '#e0e0e0' : '#2d2d44';
+            const textColor = isLight ? '#333333' : '#8a8a8a';
+
+            sentimentChart.options.scales.y.grid.color = gridColor;
+            sentimentChart.options.scales.y.ticks.color = textColor;
+            sentimentChart.options.scales.x.ticks.color = textColor;
+            sentimentChart.update();
+        }
+
+        // 加载保存的主题
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const themeIcon = document.getElementById('themeIcon');
+
+            if (savedTheme === 'light') {
+                document.body.classList.add('light-mode');
+                themeIcon.classList.remove('bi-sun-fill');
+                themeIcon.classList.add('bi-moon-fill');
+            }
+        }
+
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
+            loadTheme();  // 加载保存的主题
             initSentimentChart();
             refreshAll();
 
