@@ -519,7 +519,9 @@
                 const sentiments = [];
 
                 for (const symbol of symbols.slice(0, 5)) {  // 前5个币种
-                    const response = await fetch(`/api/sentiment/${symbol}`);
+                    // URL编码symbol参数，避免路径分隔符问题
+                    const encodedSymbol = encodeURIComponent(symbol);
+                    const response = await fetch(`/api/sentiment/${encodedSymbol}`);
                     const result = await response.json();
 
                     if (result.success) {

@@ -5,6 +5,7 @@
 
 from flask import Flask, render_template, jsonify, request
 from datetime import datetime, timedelta
+from urllib.parse import unquote
 import sys
 import os
 import json
@@ -110,10 +111,13 @@ def market_overview():
         return jsonify({'success': False, 'error': str(e), 'data': []})
 
 
-@app.route('/api/sentiment/<symbol>')
+@app.route('/api/sentiment/<path:symbol>')
 def get_sentiment(symbol):
     """获取指定币种的情绪分析"""
     try:
+        # URL解码symbol参数（如 BTC%2FUSDT -> BTC/USDT）
+        symbol = unquote(symbol)
+
         if not sentiment_analyzer:
             return jsonify({'success': False, 'error': '情绪分析器未初始化'})
 
