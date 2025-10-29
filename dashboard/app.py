@@ -320,34 +320,6 @@ def get_backtest_results():
         return jsonify({'success': False, 'error': str(e)})
 
 
-@app.route('/api/whale_alerts')
-def get_whale_alerts():
-    """获取鲸鱼交易告警"""
-    try:
-        # TODO: 实现真实的鲸鱼监控
-        # 这里返回示例数据
-        alerts = [
-            {
-                'symbol': 'BTC',
-                'type': 'large_transfer',
-                'amount': 150,
-                'from': 'Unknown Wallet',
-                'to': 'Binance',
-                'impact': 'bearish',
-                'timestamp': (datetime.now() - timedelta(hours=2)).isoformat(),
-            },
-        ]
-
-        return jsonify({
-            'success': True,
-            'data': alerts,
-            'count': len(alerts)
-        })
-
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("🚀 启动量化交易监控Dashboard")
