@@ -420,10 +420,11 @@
                     </div>
                 </div>
 
-                <!-- 买卖指引（合并交易信号） -->
+                <!-- 实时交易信号 -->
                 <div class="card">
                     <div class="card-header">
-                        <i class="bi bi-compass"></i> 交易信号与买卖指引
+                        <i class="bi bi-activity"></i> 实时交易信号
+                        <small class="text-muted ms-2">所有币种的信号强度和方向</small>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -431,26 +432,34 @@
                                 <thead>
                                     <tr>
                                         <th>币种</th>
+                                        <th>当前价格</th>
                                         <th>信号强度</th>
                                         <th>方向</th>
-                                        <th>置信度</th>
-                                        <th>开仓价</th>
-                                        <th>止损</th>
-                                        <th>止盈</th>
-                                        <th>盈亏比</th>
+                                        <th>情绪得分</th>
                                         <th>资金费率</th>
-                                        <th>情绪</th>
-                                        <th>原因</th>
                                     </tr>
                                 </thead>
-                                <tbody id="suggestionsTable">
+                                <tbody id="signalsTable">
                                     <tr>
-                                        <td colspan="11" class="text-center text-muted">
+                                        <td colspan="6" class="text-center text-muted">
                                             加载中...
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 开仓机会建议 -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-compass"></i> 开仓机会建议
+                        <small class="text-muted ms-2">仅显示有明确交易信号时</small>
+                    </div>
+                    <div class="card-body" id="opportunitiesContainer">
+                        <div class="text-muted text-center py-3">
+                            当前无明确开仓机会，市场处于观望状态
                         </div>
                     </div>
                 </div>
@@ -632,38 +641,48 @@
                 }
 
                 const tbody = document.getElementById('signalsTable');
-                const alertsContainer = document.getElementById('alertsContainer');
 
                 if (result.data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无信号</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无信号</td></tr>';
                 } else {
-                    tbody.innerHTML = result.data.map(signal => `
-                        <tr>
-                            <td><strong>${signal.symbol}</strong></td>
-                            <td><span class="badge ${signal.type === 'BULLISH' ? 'bg-success' : signal.type === 'BEARISH' ? 'bg-danger' : 'bg-warning'}">${signal.type}</span></td>
-                            <td><strong class="positive">${signal.strength}</strong></td>
-                            <td>$${signal.price.toFixed(2)}</td>
-                            <td class="${signal.funding_rate > 0 ? 'negative' : 'positive'}">
-                                ${(signal.funding_rate * 100).toFixed(4)}%
-                            </td>
-                            <td class="${signal.sentiment > 0 ? 'positive' : signal.sentiment < 0 ? 'negative' : 'neutral'}">
-                                ${signal.sentiment > 0 ? '+' : ''}${signal.sentiment}
-                            </td>
-                            <td><small>${new Date(signal.timestamp).toLocaleTimeString()}</small></td>
-                        </tr>
-                    `).join('');
+                    tbody.innerHTML = result.data.map(signal => {
+                        // 方向显示
+                        let typeIcon = '⏸️';
+                        let typeBadgeClass = 'bg-warning';
+                        let typeText = '中性';
+                        if (signal.type === 'BULLISH') {
+                            typeIcon = '📈';
+                            typeBadgeClass = 'bg-success';
+                            typeText = '看涨';
+                        } else if (signal.type === 'BEARISH') {
+                            typeIcon = '📉';
+                            typeBadgeClass = 'bg-danger';
+                            typeText = '看跌';
+                        }
 
-                    // 更新告警
-                    const allAlerts = result.all_alerts || result.data.flatMap(s => s.alerts || []);
-                    if (allAlerts.length > 0) {
-                        alertsContainer.innerHTML = allAlerts.map(alert => `
-                            <div class="alert-box alert-critical">
-                                <i class="bi bi-bell-fill"></i> ${alert}
-                            </div>
-                        `).join('');
-                    } else {
-                        alertsContainer.innerHTML = '<div class="text-muted text-center py-3">暂无告警</div>';
-                    }
+                        // 信号强度颜色
+                        let strengthClass = 'neutral';
+                        if (signal.strength >= 70) {
+                            strengthClass = 'positive';
+                        } else if (signal.strength < 55) {
+                            strengthClass = 'negative';
+                        }
+
+                        return `
+                            <tr>
+                                <td><strong>${signal.symbol.replace('/USDT', '')}</strong></td>
+                                <td>$${signal.price.toFixed(2)}</td>
+                                <td><strong class="${strengthClass}">${signal.strength}</strong></td>
+                                <td><span class="badge ${typeBadgeClass}">${typeIcon} ${typeText}</span></td>
+                                <td class="${signal.sentiment > 0 ? 'positive' : signal.sentiment < 0 ? 'negative' : 'neutral'}">
+                                    ${signal.sentiment > 0 ? '+' : ''}${signal.sentiment}
+                                </td>
+                                <td class="${signal.funding_rate > 0 ? 'negative' : signal.funding_rate < 0 ? 'positive' : 'neutral'}">
+                                    ${(signal.funding_rate * 100).toFixed(4)}%
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
                 }
 
                 document.getElementById('activeSignals').textContent = result.data.length;
@@ -673,10 +692,10 @@
             }
         }
 
-        // 更新买卖指引
-        async function updateTradingSuggestions() {
+        // 更新重要告警
+        async function updateAlerts() {
             try {
-                const response = await fetch('/api/trading_suggestions');
+                const response = await fetch('/api/alerts');
                 const result = await response.json();
 
                 if (!result.success) {
@@ -684,12 +703,71 @@
                     return;
                 }
 
-                const tbody = document.getElementById('suggestionsTable');
+                const alertsContainer = document.getElementById('alertsContainer');
+
+                if (result.count === 0) {
+                    alertsContainer.innerHTML = '<div class="text-muted text-center py-3">暂无告警</div>';
+                } else {
+                    alertsContainer.innerHTML = result.data.map(alert => {
+                        let alertClass = 'alert-info';
+                        let icon = 'bi-info-circle';
+                        if (alert.type === 'warning') {
+                            alertClass = 'alert-warning';
+                            icon = 'bi-exclamation-triangle';
+                        } else if (alert.type === 'critical') {
+                            alertClass = 'alert-critical';
+                            icon = 'bi-exclamation-octagon';
+                        }
+
+                        return `
+                            <div class="alert-box ${alertClass}">
+                                <strong>[${alert.symbol}]</strong> <i class="bi ${icon}"></i> ${alert.message}
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+            } catch (error) {
+                console.error('Failed to update alerts:', error);
+            }
+        }
+
+        // 更新开仓机会建议
+        async function updateTradingOpportunities() {
+            try {
+                const response = await fetch('/api/trading_opportunities');
+                const result = await response.json();
+
+                if (!result.success) {
+                    console.error('API error:', result.error);
+                    return;
+                }
+
+                const container = document.getElementById('opportunitiesContainer');
 
                 if (result.data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">暂无建议</td></tr>';
+                    container.innerHTML = '<div class="text-muted text-center py-3">当前无明确开仓机会，市场处于观望状态</div>';
                 } else {
-                    tbody.innerHTML = result.data.map(sug => {
+                    container.innerHTML = `
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>币种</th>
+                                        <th>方向</th>
+                                        <th>置信度</th>
+                                        <th>信号强度</th>
+                                        <th>开仓价</th>
+                                        <th>止损</th>
+                                        <th>止盈</th>
+                                        <th>盈亏比</th>
+                                        <th>资金费率</th>
+                                        <th>情绪</th>
+                                        <th>原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${result.data.map(sug => {
                         // 方向颜色和图标
                         let actionClass = 'neutral';
                         let actionIcon = '⏸️';
@@ -734,27 +812,27 @@
                         const sentimentClass = sug.sentiment > 0 ? 'positive' : sug.sentiment < 0 ? 'negative' : 'neutral';
                         const sentimentDisplay = sug.sentiment > 0 ? `+${sug.sentiment}` : sug.sentiment;
 
-                        return `
-                            <tr>
-                                <td><strong>${sug.symbol.replace('/USDT', '')}</strong></td>
-                                <td><strong class="${strengthClass}">${sug.strength}</strong></td>
-                                <td><span class="${actionClass}">${actionIcon} ${sug.action}</span></td>
-                                <td>${confidenceBadge}</td>
-                                <td>$${sug.entry_price.toFixed(4)}</td>
-                                <td class="negative">${stopLossDisplay}</td>
-                                <td class="positive">${takeProfitDisplay}</td>
-                                <td>${rrRatioDisplay}</td>
-                                <td class="${fundingRateClass}">${fundingRateDisplay}</td>
-                                <td class="${sentimentClass}">${sentimentDisplay}</td>
-                                <td><small>${sug.reason}</small></td>
-                            </tr>
-                        `;
-                    }).join('');
+                                        return `
+                                            <tr>
+                                                <td><strong>${sug.symbol.replace('/USDT', '')}</strong></td>
+                                                <td><span class="${actionClass}">${actionIcon} ${sug.action}</span></td>
+                                                <td>${confidenceBadge}</td>
+                                                <td><strong class="${strengthClass}">${sug.strength}</strong></td>
+                                                <td>$${sug.entry_price.toFixed(4)}</td>
+                                                <td class="negative">${stopLossDisplay}</td>
+                                                <td class="positive">${takeProfitDisplay}</td>
+                                                <td>${rrRatioDisplay}</td>
+                                                <td class="${fundingRateClass}">${fundingRateDisplay}</td>
+                                                <td class="${sentimentClass}">${sentimentDisplay}</td>
+                                                <td><small>${sug.reason}</small></td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
                 }
-
-                // 更新活跃信号数（方向不是观望的数量）
-                const activeCount = result.data.filter(sug => sug.action !== '观望').length;
-                document.getElementById('activeSignals').textContent = activeCount;
 
             } catch (error) {
                 console.error('Failed to update trading suggestions:', error);
@@ -905,7 +983,9 @@
             try {
                 await Promise.all([
                     updateMarketOverview(),
-                    updateTradingSuggestions(),  // 合并后的交易信号与买卖指引
+                    updateSignals(),  // 实时交易信号
+                    updateAlerts(),  // 重要告警
+                    updateTradingOpportunities(),  // 开仓机会建议
                     updateNews(),
                     updateWhaleAlerts(),
                     updateSentiment()

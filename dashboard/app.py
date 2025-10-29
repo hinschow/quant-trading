@@ -183,10 +183,9 @@ def get_news():
 
 @app.route('/api/signals')
 def get_signals():
-    """获取交易信号"""
+    """获取交易信号（显示所有币种的信号强度和方向）"""
     try:
         signals = []
-        all_alerts = []
 
         for symbol in TRADING_SYMBOLS:
             config = SYMBOL_SPECIFIC_PARAMS.get(symbol, {})
@@ -236,13 +235,7 @@ def get_signals():
             if oi > 0:
                 signal_strength += 5  # 有持仓数据加分
 
-            # 收集告警信息
-            symbol_alerts = sentiment.get('alerts', [])
-            if symbol_alerts:
-                all_alerts.extend([f"[{symbol.split('/')[0]}] {alert}" for alert in symbol_alerts])
-
-            # 显示所有启用的币种（即使信号强度不够）
-            # 但标注强度质量供用户判断
+            # 显示所有启用的币种
             signals.append({
                 'symbol': symbol,
                 'type': signal_type,
@@ -251,23 +244,105 @@ def get_signals():
                 'sentiment': sentiment_score,
                 'funding_rate': funding_rate,
                 'timestamp': datetime.now().isoformat(),
-                'alerts': symbol_alerts,
             })
 
         return jsonify({
             'success': True,
             'data': signals,
-            'count': len(signals),
-            'all_alerts': all_alerts  # 返回所有告警
+            'count': len(signals)
         })
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
 
-@app.route('/api/trading_suggestions')
-def get_trading_suggestions():
-    """获取买卖指引建议"""
+@app.route('/api/alerts')
+def get_alerts():
+    """获取重要告警信息"""
+    try:
+        all_alerts = []
+
+        for symbol in TRADING_SYMBOLS:
+            config = SYMBOL_SPECIFIC_PARAMS.get(symbol, {})
+            if not config.get('enabled', True):
+                continue
+
+            # 获取市场数据
+            market_data = market_client.get_market_data(symbol) if market_client else {}
+            if market_data is None:
+                market_data = {}
+
+            # 获取情绪分析
+            try:
+                sentiment = sentiment_analyzer.get_comprehensive_sentiment(symbol) if sentiment_analyzer else {}
+                if sentiment is None:
+                    sentiment = {}
+            except Exception as e:
+                logger.debug(f"获取{symbol}情绪分析失败: {e}")
+                sentiment = {}
+
+            # 收集告警信息
+            symbol_alerts = sentiment.get('alerts', [])
+            if symbol_alerts:
+                for alert in symbol_alerts:
+                    all_alerts.append({
+                        'symbol': symbol.split('/')[0],
+                        'message': alert,
+                        'timestamp': datetime.now().isoformat(),
+                        'type': 'info'  # info/warning/critical
+                    })
+
+            # 添加资金费率告警
+            funding_rate = market_data.get('funding_rate', 0)
+            if funding_rate > 0.002:
+                all_alerts.append({
+                    'symbol': symbol.split('/')[0],
+                    'message': f'资金费率过高 {funding_rate:.4%}（多头拥挤，警惕回调）',
+                    'timestamp': datetime.now().isoformat(),
+                    'type': 'warning'
+                })
+            elif funding_rate < -0.002:
+                all_alerts.append({
+                    'symbol': symbol.split('/')[0],
+                    'message': f'资金费率极低 {funding_rate:.4%}（空头拥挤，可能反转）',
+                    'timestamp': datetime.now().isoformat(),
+                    'type': 'info'
+                })
+
+            # 添加情绪告警
+            sentiment_score = sentiment.get('total_score', 0)
+            if sentiment_score > 30:
+                all_alerts.append({
+                    'symbol': symbol.split('/')[0],
+                    'message': f'综合情绪高涨 +{sentiment_score}分（市场乐观）',
+                    'timestamp': datetime.now().isoformat(),
+                    'type': 'info'
+                })
+            elif sentiment_score < -30:
+                all_alerts.append({
+                    'symbol': symbol.split('/')[0],
+                    'message': f'综合情绪低迷 {sentiment_score}分（市场悲观）',
+                    'timestamp': datetime.now().isoformat(),
+                    'type': 'warning'
+                })
+
+        # 按时间排序，取最新20条
+        all_alerts.sort(key=lambda x: x['timestamp'], reverse=True)
+        all_alerts = all_alerts[:20]
+
+        return jsonify({
+            'success': True,
+            'data': all_alerts,
+            'count': len(all_alerts)
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/trading_opportunities')
+def get_trading_opportunities():
+    """获取开仓机会（仅显示有明确交易信号的机会）"""
     try:
         suggestions = []
 
@@ -366,16 +441,15 @@ def get_trading_suggestions():
                 'timestamp': datetime.now().isoformat(),
             }
 
-            # 只记录可交易的信号（非观望）
-            if signal_type in ['BUY', 'SELL'] and signal_recorder:
-                try:
-                    signal_recorder.record_signal(suggestion)
-                except Exception as e:
-                    logger.debug(f"记录信号失败: {e}")
+            # 只显示有明确交易机会的（BUY/SELL）
+            if signal_type in ['BUY', 'SELL']:
+                # 记录到数据库
+                if signal_recorder:
+                    try:
+                        signal_recorder.record_signal(suggestion)
+                    except Exception as e:
+                        logger.debug(f"记录信号失败: {e}")
 
-            # 根据请求参数决定是否过滤
-            show_all = request.args.get('show_all', 'false').lower() == 'true'
-            if show_all or signal_type != 'HOLD':
                 suggestions.append(suggestion)
 
         return jsonify({
@@ -386,6 +460,12 @@ def get_trading_suggestions():
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/trading_suggestions')
+def get_trading_suggestions():
+    """兼容旧API，重定向到trading_opportunities"""
+    return get_trading_opportunities()
 
 
 def _generate_reason(signal_type, strength, sentiment, funding_rate):
