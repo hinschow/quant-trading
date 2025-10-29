@@ -14,8 +14,8 @@ C. 灵活自定义：完全自定义每个指标的启用和权重
 """
 
 # ==================== 预设方案 ====================
-# 使用哪个方案？ 'CONSERVATIVE' / 'SIMPLIFIED' / 'CUSTOM'
-ACTIVE_PRESET = 'CONSERVATIVE'
+# 使用哪个方案？ 'CONSERVATIVE' / 'SIMPLIFIED' / 'BALANCED' / 'CUSTOM'
+ACTIVE_PRESET = 'BALANCED'  # 默认使用平衡方案
 
 # ==================== 方案A：保守精确（推荐）====================
 CONSERVATIVE_CONFIG = {
@@ -198,7 +198,84 @@ SIMPLIFIED_CONFIG = {
     }
 }
 
-# ==================== 方案C：灵活自定义 ====================
+# ==================== 方案C：平衡方案（新增）====================
+BALANCED_CONFIG = {
+    "name": "平衡方案（推荐）",
+    "description": "阈值适中，允许震荡市交易，适合大部分情况",
+
+    # 信号阈值配置（比保守方案低，比简化方案高）
+    "thresholds": {
+        "trend_buy": 50,         # 趋势买入：50分（保守60，简化50）
+        "trend_sell": 50,        # 趋势卖出：50分
+        "mean_reversion_buy": 40,   # 震荡买入：40分（保守50，简化40）
+        "mean_reversion_sell": 40,  # 震荡卖出：40分
+    },
+
+    # 指标启用配置（核心指标+OBV）
+    "indicators": {
+        "ema": {
+            "enabled": True,
+            "weight": {"cross": 50, "in_trend": 20, "strong_trend": 10}
+        },
+        "macd": {
+            "enabled": True,
+            "weight": {"cross": 40, "aligned": 15}
+        },
+        "adx": {
+            "enabled": True,
+            "weight": {"trending": 10, "strong_trending": 5}
+        },
+        "rsi": {
+            "enabled": True,
+            "weight": {"healthy": 15, "very_strong": 10}
+        },
+        "kdj": {
+            "enabled": False,  # ❌ 禁用KDJ（信号太多）
+        },
+        "volume": {
+            "enabled": True,
+            "weight": {"confirmation": 15}
+        },
+        "obv": {
+            "enabled": True,   # ✅ 启用OBV
+            "weight": {"rising": 15},
+            "divergence_penalty": {  # 中等惩罚
+                "severe": 35,
+                "moderate": 25,
+                "mild": 15,
+                "weak": 8,
+            }
+        },
+        "vwap": {
+            "enabled": False,  # ❌ 禁用VWAP
+        },
+        "funding_rate": {
+            "enabled": True,
+        },
+        "smart_money": {
+            "enabled": True,   # ✅ 启用聪明钱包
+        },
+    },
+
+    # 市场状态过滤（允许震荡市）
+    "market_regime_filter": {
+        "STRONG_TREND": True,   # ✅ 允许强趋势
+        "TREND": True,          # ✅ 允许趋势
+        "RANGE": True,          # ✅ 允许震荡市（关键差异）
+        "SQUEEZE": False,       # ❌ 禁止挤压市
+        "NEUTRAL": False,       # ❌ 禁止中性市
+    },
+
+    # 额外过滤（适中）
+    "extra_filters": {
+        "min_adx": 20,          # 最低ADX：20（保守30，简化25）
+        "require_volume_confirmation": False,  # 不强制要求成交量确认
+        "max_rsi_for_buy": 75,  # 买入RSI上限：75
+        "min_rsi_for_sell": 25, # 卖出RSI下限：25
+    }
+}
+
+# ==================== 方案D：灵活自定义 ====================
 CUSTOM_CONFIG = {
     "name": "灵活自定义",
     "description": "完全自定义配置（复制上面的配置并修改）",
@@ -249,6 +326,8 @@ def get_active_config():
         return CONSERVATIVE_CONFIG
     elif ACTIVE_PRESET == 'SIMPLIFIED':
         return SIMPLIFIED_CONFIG
+    elif ACTIVE_PRESET == 'BALANCED':
+        return BALANCED_CONFIG
     elif ACTIVE_PRESET == 'CUSTOM':
         return CUSTOM_CONFIG
     else:
@@ -303,6 +382,13 @@ def switch_to_simplified():
     global ACTIVE_PRESET
     ACTIVE_PRESET = 'SIMPLIFIED'
     print("✅ 已切换到：核心简化方案")
+    print_config_summary()
+
+def switch_to_balanced():
+    """切换到平衡方案"""
+    global ACTIVE_PRESET
+    ACTIVE_PRESET = 'BALANCED'
+    print("✅ 已切换到：平衡方案")
     print_config_summary()
 
 def switch_to_custom():
