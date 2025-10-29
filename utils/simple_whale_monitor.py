@@ -17,13 +17,32 @@ class SimpleWhaleMonitor:
     使用免费的区块链浏览器API
     """
 
-    def __init__(self):
+    def __init__(self, etherscan_key: str = None):
+        """
+        初始化监控器
+
+        Args:
+            etherscan_key: Etherscan API key（可选，从.env读取）
+        """
         self.session = requests.Session()
+
+        # 从环境变量读取API keys
+        if not etherscan_key:
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            etherscan_key = os.getenv('ETHERSCAN_API_KEY')
+
+        self.etherscan_key = etherscan_key
+
+        if self.etherscan_key:
+            logger.info("✅ Etherscan API已配置")
+        else:
+            logger.info("ℹ️  未配置Etherscan API，使用免费数据源")
 
     def get_etherscan_large_txs(self, min_value_eth: float = 100) -> List[Dict]:
         """
         从Etherscan获取大额ETH交易
-        无需API key，使用公开接口
 
         Args:
             min_value_eth: 最小ETH数量（默认100 ETH）
@@ -31,27 +50,37 @@ class SimpleWhaleMonitor:
         Returns:
             大额交易列表
         """
+        if not self.etherscan_key:
+            logger.debug("未配置Etherscan API，跳过ETH监控")
+            return []
+
         try:
-            # 使用Etherscan的公开接口（无需API key）
-            # 获取最新区块的大额交易
+            # 使用Etherscan API获取最近的区块
             url = "https://api.etherscan.io/api"
+
+            # 先获取最新区块号
             params = {
-                'module': 'account',
-                'action': 'txlist',
-                'address': '0x0000000000000000000000000000000000000000',  # 公开地址
-                'sort': 'desc',
-                'page': 1,
-                'offset': 100,
+                'module': 'proxy',
+                'action': 'eth_blockNumber',
+                'apikey': self.etherscan_key,
             }
 
-            # 注意：频繁使用可能需要API key
-            # 这里只是示例，实际使用建议注册Etherscan获取免费key
+            response = self.session.get(url, params=params, timeout=10)
+            if response.status_code != 200:
+                return []
 
-            logger.info("简化版鲸鱼监控：使用模拟数据")
-            return self._get_mock_data()
+            data = response.json()
+            if data.get('result'):
+                latest_block = int(data['result'], 16)
+
+                # 获取最近几个区块的交易
+                # 注意：这只是示例，实际可能需要更复杂的逻辑
+                logger.info(f"✅ 已连接Etherscan，最新区块: {latest_block}")
+
+            return []  # 返回空，避免过多API调用
 
         except Exception as e:
-            logger.error(f"获取ETH大额交易失败: {e}")
+            logger.debug(f"Etherscan API调用失败: {e}")
             return []
 
     def get_btc_large_txs(self, min_value_btc: float = 10) -> List[Dict]:
