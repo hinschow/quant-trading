@@ -109,10 +109,28 @@ NEWS_PARAMS = {
 ONCHAIN_PARAMS = {
     "enabled": True,
 
+    # 区块链浏览器API（推荐）
+    "blockchain_explorers": {
+        "etherscan": {
+            "enabled": True,
+            "api_key_env": "ETHERSCAN_API_KEY",  # 从环境变量读取
+            "base_url": "https://api.etherscan.io/api",
+            "rate_limit": 5,             # 5次/秒（免费tier）
+            "description": "监控ETH和ERC-20代币",
+        },
+        "bscscan": {
+            "enabled": False,
+            "api_key_env": "BSCSCAN_API_KEY",
+            "base_url": "https://api.bscscan.com/api",
+            "rate_limit": 5,
+            "description": "监控BNB和BSC生态",
+        },
+    },
+
     # 鲸鱼交易监控
     "whale_alerts": {
         "enabled": True,
-        "api_provider": "whale_alert",   # whale-alert.io (有免费tier)
+        "use_simple_monitor": True,      # 使用简化版（无需API key）
         "thresholds": {
             "BTC": 50,                   # 50 BTC
             "ETH": 500,                  # 500 ETH
@@ -126,10 +144,18 @@ ONCHAIN_PARAMS = {
         },
     },
 
+    # Whale Alert官方API（可选，需要特殊申请）
+    "whale_alert_api": {
+        "enabled": False,
+        "api_key_env": "WHALE_ALERT_API_KEY",
+        "base_url": "https://api.whale-alert.io/v1",
+        "min_value": 500000,             # 最小金额（美元）
+    },
+
     # Glassnode 指标（需要付费，可选）
     "glassnode": {
         "enabled": False,
-        "api_key": "",
+        "api_key_env": "GLASSNODE_API_KEY",
         "metrics": [
             "exchange_net_flow",         # 交易所净流量
             "mvrv_ratio",                # 市值/实现市值
