@@ -34,6 +34,13 @@ class BinanceDataClient:
             'SOLUSDT': 'SOLUSDT',
         }
 
+        # 设置请求头，避免被识别为机器人
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+
         logger.info("✅ Binance数据客户端初始化完成")
 
     def _convert_symbol(self, symbol: str) -> str:
@@ -70,7 +77,7 @@ class BinanceDataClient:
             url = f"{self.api_url}/premiumIndex"
             params = {'symbol': binance_symbol}
 
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, headers=self.headers, timeout=10)
             response.raise_for_status()
 
             data = response.json()
@@ -107,7 +114,7 @@ class BinanceDataClient:
             url = f"{self.api_url}/openInterest"
             params = {'symbol': binance_symbol}
 
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, headers=self.headers, timeout=10)
             response.raise_for_status()
 
             data = response.json()
@@ -153,7 +160,7 @@ class BinanceDataClient:
             url = f"{self.api_url}/premiumIndex"
             params = {'symbol': binance_symbol}
 
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, headers=self.headers, timeout=10)
             response.raise_for_status()
 
             data = response.json()

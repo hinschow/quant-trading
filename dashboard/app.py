@@ -182,6 +182,8 @@ def get_signals():
 
             # 获取市场数据
             market_data = market_client.get_market_data(symbol) if market_client else {}
+            if market_data is None:
+                market_data = {}
             if not market_data.get('price'):
                 continue  # 跳过无法获取数据的币种
 
