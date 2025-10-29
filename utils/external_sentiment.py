@@ -240,31 +240,20 @@ class WhaleAlertMonitor:
 
     def get_sentiment_score(self, symbol: str) -> Dict:
         """获取链上数据得分"""
-        if not self.enabled:
-            return {'score': 0, 'signals': []}
+        # 使用简化版监控（不需要Whale Alert API）
+        try:
+            from utils.simple_whale_monitor import SimpleWhaleMonitor
+            monitor = SimpleWhaleMonitor()
 
-        transactions = self.get_whale_transactions(symbol)
+            # 提取基础符号（如 "BTC/USDT" -> "BTC"）
+            base_symbol = symbol.split('/')[0] if '/' in symbol else symbol
 
-        score = 0
-        signals = []
+            result = monitor.get_whale_score(base_symbol)
+            return result
 
-        for tx in transactions:
-            # 分析交易类型和影响
-            tx_type = tx.get("type")
-            amount = tx.get("amount", 0)
-
-            impact_scores = self.config.get("impact_scores", {})
-
-            if tx_type in impact_scores:
-                impact = impact_scores[tx_type]
-                score += impact
-                signals.append(f"{tx_type}: {amount} (影响: {impact:+d})")
-
-        return {
-            'score': score,
-            'signals': signals[:5],
-            'transactions': transactions[:10],
-        }
+        except Exception as e:
+            logger.debug(f"简化版鲸鱼监控失败: {e}")
+            return {'score': 0, 'signals': [], 'transactions': []}
 
 
 class ExternalSentimentAnalyzer:
