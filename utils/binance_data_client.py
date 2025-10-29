@@ -34,12 +34,30 @@ class BinanceDataClient:
             'SOLUSDT': 'SOLUSDT',
         }
 
-        # 设置请求头，避免被识别为机器人
+        # 设置完整的浏览器请求头，避免被识别为机器人
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Referer': 'https://www.binance.com/',
+            'Origin': 'https://www.binance.com',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-site',
+            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
         }
+
+        # 创建会话并设置
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+
+        # 添加请求之间的延迟，避免频率过高
+        self.last_request_time = 0
+        self.min_request_interval = 0.5  # 最小请求间隔（秒）
 
         logger.info("✅ Binance数据客户端初始化完成")
 
@@ -54,6 +72,14 @@ class BinanceDataClient:
             Binance格式的交易对（如 'BTCUSDT'）
         """
         return self.symbol_map.get(symbol, symbol.replace('/', ''))
+
+    def _throttle_request(self):
+        """确保请求之间有最小间隔，避免频率过高被拒绝"""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        if time_since_last < self.min_request_interval:
+            time.sleep(self.min_request_interval - time_since_last)
+        self.last_request_time = time.time()
 
     def get_funding_rate(self, symbol: str) -> Optional[float]:
         """
@@ -73,11 +99,14 @@ class BinanceDataClient:
         binance_symbol = self._convert_symbol(symbol)
 
         try:
+            # 请求节流
+            self._throttle_request()
+
             # Binance API: GET /fapi/v1/premiumIndex
             url = f"{self.api_url}/premiumIndex"
             params = {'symbol': binance_symbol}
 
-            response = requests.get(url, params=params, headers=self.headers, timeout=10)
+            response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
 
             data = response.json()
@@ -110,11 +139,14 @@ class BinanceDataClient:
         binance_symbol = self._convert_symbol(symbol)
 
         try:
+            # 请求节流
+            self._throttle_request()
+
             # Binance API: GET /fapi/v1/openInterest
             url = f"{self.api_url}/openInterest"
             params = {'symbol': binance_symbol}
 
-            response = requests.get(url, params=params, headers=self.headers, timeout=10)
+            response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
 
             data = response.json()
@@ -156,11 +188,14 @@ class BinanceDataClient:
         binance_symbol = self._convert_symbol(symbol)
 
         try:
+            # 请求节流
+            self._throttle_request()
+
             # Binance API: GET /fapi/v1/premiumIndex
             url = f"{self.api_url}/premiumIndex"
             params = {'symbol': binance_symbol}
 
-            response = requests.get(url, params=params, headers=self.headers, timeout=10)
+            response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
 
             data = response.json()
