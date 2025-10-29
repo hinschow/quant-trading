@@ -28,11 +28,30 @@ def init_services():
     """初始化服务"""
     global sentiment_analyzer, market_client
     try:
-        sentiment_analyzer = get_sentiment_analyzer()
-        market_client = HyperliquidClient()
-        print("✅ Dashboard服务初始化完成")
+        print("\n正在初始化Dashboard服务...")
+
+        # 初始化情绪分析器
+        try:
+            sentiment_analyzer = get_sentiment_analyzer()
+            print("  ✅ 情绪分析器初始化成功")
+        except Exception as e:
+            print(f"  ⚠️  情绪分析器初始化失败: {e}")
+            sentiment_analyzer = None
+
+        # 初始化市场数据客户端
+        try:
+            market_client = HyperliquidClient()
+            print("  ✅ 市场数据客户端初始化成功")
+        except Exception as e:
+            print(f"  ⚠️  市场数据客户端初始化失败: {e}")
+            market_client = None
+
+        print("✅ Dashboard服务初始化完成\n")
+
     except Exception as e:
-        print(f"⚠️  服务初始化失败: {e}")
+        print(f"❌ 服务初始化失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @app.route('/')
@@ -47,25 +66,36 @@ def index():
 def market_overview():
     """市场概览API"""
     try:
+        if not market_client:
+            return jsonify({
+                'success': False,
+                'error': '市场数据客户端未初始化',
+                'data': []
+            })
+
         overview = []
 
         for symbol in TRADING_SYMBOLS:
-            # 获取市场数据
-            market_data = market_client.get_market_data(symbol) if market_client else {}
+            try:
+                # 获取市场数据
+                market_data = market_client.get_market_data(symbol)
 
-            # 获取配置
-            config = SYMBOL_SPECIFIC_PARAMS.get(symbol, {})
-            enabled = config.get('enabled', True)
+                # 获取配置
+                config = SYMBOL_SPECIFIC_PARAMS.get(symbol, {})
+                enabled = config.get('enabled', True)
 
-            overview.append({
-                'symbol': symbol,
-                'price': market_data.get('price', 0),
-                'funding_rate': market_data.get('funding_rate', 0),
-                'open_interest': market_data.get('open_interest', 0),
-                'data_source': market_data.get('source', 'N/A'),
-                'enabled': enabled,
-                'timeframe': config.get('timeframe_preference', '30m'),
-            })
+                overview.append({
+                    'symbol': symbol,
+                    'price': market_data.get('price', 0) if market_data else 0,
+                    'funding_rate': market_data.get('funding_rate', 0) if market_data else 0,
+                    'open_interest': market_data.get('open_interest', 0) if market_data else 0,
+                    'data_source': market_data.get('source', 'N/A') if market_data else 'N/A',
+                    'enabled': enabled,
+                    'timeframe': config.get('timeframe_preference', '30m'),
+                })
+            except Exception as e:
+                print(f"获取 {symbol} 数据失败: {e}")
+                continue
 
         return jsonify({
             'success': True,
@@ -74,7 +104,10 @@ def market_overview():
         })
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        print(f"市场概览API错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e), 'data': []})
 
 
 @app.route('/api/sentiment/<symbol>')

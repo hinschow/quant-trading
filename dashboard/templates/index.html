@@ -356,6 +356,8 @@
                         label: '情绪得分',
                         data: [],
                         backgroundColor: function(context) {
+                            // 安全检查，避免undefined错误
+                            if (!context.parsed) return '#8a8a8a';
                             const value = context.parsed.y;
                             return value > 0 ? '#00d4aa' : '#ff4757';
                         },
