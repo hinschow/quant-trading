@@ -17,7 +17,7 @@ def run_backtest(symbol, timeframe, limit, capital=10000, position=1.0, commissi
     print(f"{'='*80}\n")
 
     cmd = [
-        'python3',
+        sys.executable,  # 使用当前 Python 解释器
         'backtest_engine.py',
         symbol,
         '-t', timeframe,
@@ -177,8 +177,8 @@ def main():
     print("="*80)
     print("下一步:")
     print("="*80)
-    print("  1. 分析各时间周期: python3 analyze_multi_timeframe.py")
-    print("  2. 查看结果目录: ls -lh backtest_results/multi_timeframe/*/")
+    print("  1. 分析各时间周期: python analyze_multi_timeframe.py")
+    print("  2. 查看结果目录: dir backtest_results\\multi_timeframe\\")
     print("  3. 对比最佳周期: 查看分析报告")
     print()
 
