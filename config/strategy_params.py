@@ -268,12 +268,12 @@ SYMBOL_SPECIFIC_PARAMS = {
         "enabled": True,
     },
     "SNX/USDT": {
-        # SNX: 所有周期都亏损严重 - 暂时禁用
+        # SNX: 所有周期都亏损严重 - 用户要求启用
         "stop_loss_pct": 0.025,
         "take_profit_pct": 0.05,
         "min_signal_strength": 75,              # 极高门槛
         "adx_threshold": 35,
-        "enabled": False,                       # 禁用
+        "enabled": True,                        # 启用（警告：回测表现不佳）
     },
     "BNB/USDT": {
         # BNB: 1h最好(-0.41%), 接近盈亏平衡
@@ -311,12 +311,12 @@ SYMBOL_SPECIFIC_PARAMS = {
         "enabled": True,
     },
     "M/USDT": {
-        # M: 15m稍好(-6.17%)但整体不佳 - 暂时禁用
+        # M: 15m稍好(-6.17%)但整体不佳 - 用户要求启用
         "stop_loss_pct": 0.025,
         "take_profit_pct": 0.05,
         "min_signal_strength": 65,
         "adx_threshold": 30,
-        "enabled": False,                       # 禁用
+        "enabled": True,                        # 启用（警告：回测表现不佳）
     },
 }
 

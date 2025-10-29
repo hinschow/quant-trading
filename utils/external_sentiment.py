@@ -305,14 +305,40 @@ class ExternalSentimentAnalyzer:
         all_signals.extend(news_data.get('signals', []))
         all_signals.extend(whale_data.get('signals', []))
 
-        # 检查告警
+        # 检查告警（增强版）
         alerts = []
         total_score = sum(breakdown.values())
 
+        # 1. 情绪得分告警
         if total_score > ALERT_THRESHOLDS.get("sentiment_spike", {}).get("positive", 30):
             alerts.append(f"⚡ 情绪高涨: {symbol} 综合得分 {total_score:+d}")
         elif total_score < ALERT_THRESHOLDS.get("sentiment_spike", {}).get("negative", -30):
             alerts.append(f"⚠️  情绪低迷: {symbol} 综合得分 {total_score:+d}")
+
+        # 2. 鲸鱼活动告警
+        whale_score = breakdown.get('whale', 0)
+        if abs(whale_score) >= 10:
+            direction = "看涨" if whale_score > 0 else "看跌"
+            alerts.append(f"🐋 鲸鱼异动: {symbol} 大额交易 ({direction})")
+
+        # 3. 新闻事件告警
+        news_score = breakdown.get('news', 0)
+        if abs(news_score) >= 15:
+            direction = "利好" if news_score > 0 else "利空"
+            alerts.append(f"📰 重要新闻: {symbol} 新闻{direction} (得分{news_score:+d})")
+
+        # 4. 社交媒体病毒式传播告警
+        twitter_volume = twitter_data.get('volume', 0)
+        if twitter_volume > 500:
+            alerts.append(f"🔥 热度飙升: {symbol} 社交媒体提及 {twitter_volume} 次")
+
+        # 5. 多数据源一致性告警（高置信度信号）
+        positive_sources = sum(1 for score in breakdown.values() if score > 5)
+        negative_sources = sum(1 for score in breakdown.values() if score < -5)
+        if positive_sources >= 2:
+            alerts.append(f"✅ 多源共振: {symbol} {positive_sources}个数据源看涨")
+        elif negative_sources >= 2:
+            alerts.append(f"❌ 多源共振: {symbol} {negative_sources}个数据源看跌")
 
         return {
             'total_score': total_score,
