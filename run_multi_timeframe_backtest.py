@@ -58,6 +58,9 @@ def organize_results(timeframe):
         if file.startswith('backtest_trades_') and file.endswith(f'_{timeframe}.csv'):
             dest = os.path.join(target_dir, file)
             if os.path.exists(file):
+                # 如果目标文件已存在，先删除
+                if os.path.exists(dest):
+                    os.remove(dest)
                 os.rename(file, dest)
                 moved_count += 1
                 print(f"  ✓ 移动: {file} → {dest}")
