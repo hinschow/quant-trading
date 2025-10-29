@@ -420,10 +420,10 @@
                     </div>
                 </div>
 
-                <!-- 交易信号 -->
+                <!-- 买卖指引（合并交易信号） -->
                 <div class="card">
                     <div class="card-header">
-                        <i class="bi bi-lightning"></i> 实时交易信号
+                        <i class="bi bi-compass"></i> 交易信号与买卖指引
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -431,49 +431,21 @@
                                 <thead>
                                     <tr>
                                         <th>币种</th>
-                                        <th>信号</th>
-                                        <th>强度</th>
-                                        <th>价格</th>
-                                        <th>资金费率</th>
-                                        <th>情绪</th>
-                                        <th>时间</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="signalsTable">
-                                    <tr>
-                                        <td colspan="7" class="text-center text-muted">
-                                            加载中...
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 买卖指引 -->
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-compass"></i> 买卖指引建议
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-dark table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>币种</th>
+                                        <th>信号强度</th>
                                         <th>方向</th>
                                         <th>置信度</th>
                                         <th>开仓价</th>
                                         <th>止损</th>
                                         <th>止盈</th>
                                         <th>盈亏比</th>
+                                        <th>资金费率</th>
+                                        <th>情绪</th>
                                         <th>原因</th>
                                     </tr>
                                 </thead>
                                 <tbody id="suggestionsTable">
                                     <tr>
-                                        <td colspan="8" class="text-center text-muted">
+                                        <td colspan="11" class="text-center text-muted">
                                             加载中...
                                         </td>
                                     </tr>
@@ -715,7 +687,7 @@
                 const tbody = document.getElementById('suggestionsTable');
 
                 if (result.data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无建议</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">暂无建议</td></tr>';
                 } else {
                     tbody.innerHTML = result.data.map(sug => {
                         // 方向颜色和图标
@@ -739,25 +711,50 @@
                             confidenceBadge = '<span class="badge bg-secondary">低</span>';
                         }
 
+                        // 信号强度颜色
+                        let strengthClass = 'neutral';
+                        if (sug.strength >= 70) {
+                            strengthClass = 'positive';
+                        } else if (sug.strength >= 60) {
+                            strengthClass = 'neutral';
+                        } else {
+                            strengthClass = 'negative';
+                        }
+
                         // 止盈止损显示
                         const stopLossDisplay = sug.stop_loss ? `$${sug.stop_loss.toFixed(4)}` : '-';
                         const takeProfitDisplay = sug.take_profit ? `$${sug.take_profit.toFixed(4)}` : '-';
                         const rrRatioDisplay = sug.risk_reward_ratio ? `1:${sug.risk_reward_ratio}` : '-';
 
+                        // 资金费率显示
+                        const fundingRateClass = sug.funding_rate > 0 ? 'negative' : sug.funding_rate < 0 ? 'positive' : 'neutral';
+                        const fundingRateDisplay = (sug.funding_rate * 100).toFixed(4) + '%';
+
+                        // 情绪显示
+                        const sentimentClass = sug.sentiment > 0 ? 'positive' : sug.sentiment < 0 ? 'negative' : 'neutral';
+                        const sentimentDisplay = sug.sentiment > 0 ? `+${sug.sentiment}` : sug.sentiment;
+
                         return `
                             <tr>
                                 <td><strong>${sug.symbol.replace('/USDT', '')}</strong></td>
+                                <td><strong class="${strengthClass}">${sug.strength}</strong></td>
                                 <td><span class="${actionClass}">${actionIcon} ${sug.action}</span></td>
                                 <td>${confidenceBadge}</td>
                                 <td>$${sug.entry_price.toFixed(4)}</td>
                                 <td class="negative">${stopLossDisplay}</td>
                                 <td class="positive">${takeProfitDisplay}</td>
                                 <td>${rrRatioDisplay}</td>
+                                <td class="${fundingRateClass}">${fundingRateDisplay}</td>
+                                <td class="${sentimentClass}">${sentimentDisplay}</td>
                                 <td><small>${sug.reason}</small></td>
                             </tr>
                         `;
                     }).join('');
                 }
+
+                // 更新活跃信号数（方向不是观望的数量）
+                const activeCount = result.data.filter(sug => sug.action !== '观望').length;
+                document.getElementById('activeSignals').textContent = activeCount;
 
             } catch (error) {
                 console.error('Failed to update trading suggestions:', error);
@@ -908,8 +905,7 @@
             try {
                 await Promise.all([
                     updateMarketOverview(),
-                    updateSignals(),
-                    updateTradingSuggestions(),
+                    updateTradingSuggestions(),  // 合并后的交易信号与买卖指引
                     updateNews(),
                     updateWhaleAlerts(),
                     updateSentiment()
